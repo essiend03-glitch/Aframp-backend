@@ -250,6 +250,10 @@ pub mod kya;
 #[cfg(feature = "database")]
 pub mod dispute;
 
+// Sanctions screening engine — real-time blocking at the edge (Issue #419)
+#[cfg(feature = "database")]
+pub mod sanctions;
+
 // Contract error enum for Soroban (only when not using database feature)
 #[cfg(not(feature = "database"))]
 #[contracterror]

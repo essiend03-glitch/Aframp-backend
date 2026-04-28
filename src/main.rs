@@ -2555,6 +2555,31 @@ async fn main() -> anyhow::Result<()> {
         app
     };
 
+    // ── Sanctions screening middleware (Issue #419) ───────────────────────────
+    // Runs on every strong-consistency transaction route.  Fail-closed: any
+    // provider error pauses the transaction rather than allowing it through.
+    let app = if let (Some(ref pool), Some(ref cache)) = (db_pool.clone(), redis_cache.clone()) {
+        let sanctions_state = crate::middleware::sanctions::SanctionsMiddlewareState {
+            screener: std::sync::Arc::new(crate::sanctions::SanctionsScreener::new(
+                crate::sanctions::ScreenerConfig {
+                    provider_url: std::env::var("SANCTIONS_PROVIDER_URL")
+                        .unwrap_or_else(|_| "https://api.complyadvantage.com".into()),
+                    api_key: std::env::var("SANCTIONS_API_KEY").unwrap_or_default(),
+                    ..Default::default()
+                },
+                std::sync::Arc::new(cache.clone()),
+            )),
+            audit_log: std::sync::Arc::new(crate::sanctions::AuditLog::new(pool.clone())),
+            bypass_svc: std::sync::Arc::new(crate::sanctions::BypassService::new(pool.clone())),
+        };
+        app.layer(axum::Extension(sanctions_state))
+            .layer(axum::middleware::from_fn(
+                crate::middleware::sanctions::sanctions_screening_middleware,
+            ))
+    } else {
+        app
+    };
+
 
     info!("✅ Routes configured");
 

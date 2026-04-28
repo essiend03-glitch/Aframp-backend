@@ -38,3 +38,6 @@ pub mod cors;
 pub mod security;
 
 pub mod edge_cache;
+
+#[cfg(feature = "database")]
+pub mod sanctions;
