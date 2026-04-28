@@ -6,6 +6,7 @@
 use super::models::{AmlCaseStatus, AmlFlag, AmlFlagLevel, AmlScreeningResult};
 use super::repository::AmlRepository;
 use crate::services::notification::NotificationService;
+use crate::sar::SarService;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -31,6 +32,7 @@ pub struct AmlCase {
 pub struct AmlCaseManager {
     repo: AmlRepository,
     notifications: Arc<NotificationService>,
+    sar_svc: Option<Arc<SarService>>,
 }
 
 impl AmlCaseManager {
@@ -38,7 +40,14 @@ impl AmlCaseManager {
         Self {
             repo: AmlRepository::new(pool),
             notifications,
+            sar_svc: None,
         }
+    }
+
+    /// Attach a SAR service so Critical/Medium cases auto-generate a SAR draft.
+    pub fn with_sar(mut self, sar_svc: Arc<SarService>) -> Self {
+        self.sar_svc = Some(sar_svc);
+        self
     }
 
     /// Open a new compliance case for a flagged transaction.
@@ -84,6 +93,30 @@ impl AmlCaseManager {
                     ),
                 )
                 .await;
+        }
+
+        // Auto-generate SAR draft for Critical or Medium flags
+        let should_draft = matches!(
+            result.flag_level,
+            Some(AmlFlagLevel::Critical) | Some(AmlFlagLevel::Medium)
+        );
+        if should_draft {
+            if let Some(ref sar_svc) = self.sar_svc {
+                let svc = Arc::clone(sar_svc);
+                let case_id = case.id;
+                let tx_id = result.transaction_id;
+                let wallet = wallet_address.to_owned();
+                tokio::spawn(async move {
+                    match svc.auto_draft(case_id, tx_id, &wallet).await {
+                        Ok(sar) => {
+                            if let Err(e) = svc.submit_for_review(sar.id).await {
+                                error!(sar_id = %sar.id, error = %e, "Failed to submit SAR for review");
+                            }
+                        }
+                        Err(e) => error!(aml_case_id = %case_id, error = %e, "SAR auto-draft failed"),
+                    }
+                });
+            }
         }
 
         Ok(case)

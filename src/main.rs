@@ -1827,6 +1827,15 @@ async fn main() -> anyhow::Result<()> {
         Router::new()
     };
 
+    // ── SAR (Suspicious Activity Report) workflow ─────────────────────────────
+    let sar_routes = if let Some(ref pool) = db_pool {
+        let sar_svc = std::sync::Arc::new(crate::sar::SarService::new(pool.clone()));
+        info!("📋 SAR workflow routes enabled");
+        Router::new().nest("/api/v1/sar", crate::sar::routes::router(sar_svc))
+    } else {
+        Router::new()
+    };
+
     // ── External Auditor Portal ───────────────────────────────────────────────
     let auditor_portal_routes = if let Some(ref pool) = db_pool {
         let audit_repo = std::sync::Arc::new(audit::repository::AuditLogRepository::new(pool.clone()));
@@ -2343,6 +2352,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(adaptive_rl_admin_routes)
         .merge(audit_routes)
         .merge(auditor_portal_routes)
+        .merge(sar_routes)
         .merge(key_rotation_routes)
         .merge(analytics_routes)
         .merge(openapi_routes)
