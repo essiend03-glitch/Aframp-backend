@@ -254,6 +254,9 @@ pub mod dispute;
 #[cfg(feature = "database")]
 pub mod sanctions;
 
+// Automated SAR (Suspicious Activity Report) workflow (Issue #420)
+#[cfg(feature = "database")]
+pub mod sar;
 // Contract error enum for Soroban (only when not using database feature)
 #[cfg(not(feature = "database"))]
 #[contracterror]
