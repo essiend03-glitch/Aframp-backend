@@ -1861,6 +1861,18 @@ async fn main() -> anyhow::Result<()> {
         info!("⏭️  Skipping compliance effectiveness routes (no database)");
         Router::new()
     };
+
+    // ── KYB (Know Your Business) — Corporate Entity Verification ─────────────
+    let kyb_routes = if let Some(ref pool) = db_pool {
+        let kyb_repo = std::sync::Arc::new(kyb::KybRepository::new(pool.clone()));
+        let kyb_orchestrator = std::sync::Arc::new(kyb::KybOrchestrator::new(kyb_repo));
+        let kyb_state = std::sync::Arc::new(kyb::KybState { orchestrator: kyb_orchestrator });
+        info!("✅ KYB routes enabled");
+        kyb::kyb_routes(kyb_state)
+    } else {
+        info!("⏭️  Skipping KYB routes (no database)");
+        Router::new()
+    };
     let (ddos_state, ddos_admin_routes) = if let Some(ref cache) = redis_cache {
         let ddos_config = ddos::config::DdosConfig::from_env();
         let state = std::sync::Arc::new(ddos::state::DdosState::new(ddos_config, cache.clone()));
@@ -2494,6 +2506,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(audit_routes)
         .merge(auditor_portal_routes)
         .merge(compliance_effectiveness_routes)
+        .merge(kyb_routes)
         .merge(key_rotation_routes)
         .merge(analytics_routes)
         .merge(openapi_routes)
