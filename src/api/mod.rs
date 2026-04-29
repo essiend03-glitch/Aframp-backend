@@ -12,9 +12,14 @@ pub mod auth;
 pub mod openapi;
 pub mod admin;
 pub mod batch;
+pub mod analytics;
+pub mod partner;
+pub mod transaction_history;
+pub mod recurring;
 pub mod key_rotation;
 pub mod developer;
 pub mod transparency;
+pub mod por;
 pub mod service_admin;
 pub mod mint;
 

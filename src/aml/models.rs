@@ -106,3 +106,108 @@ pub struct VelocityPattern {
     pub window_hours: u32,
     pub detected_at: DateTime<Utc>,
 }
+// ---------------------------------------------------------------------------
+// CTR (Currency Transaction Report) Models — Issue #390
+// ---------------------------------------------------------------------------
+
+/// CTR type classification
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "text")]
+pub enum CtrType {
+    Individual,
+    Corporate,
+}
+
+/// CTR status lifecycle
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "text")]
+pub enum CtrStatus {
+    Draft,
+    UnderReview,
+    Approved,
+    Filed,
+    Acknowledged,
+    Rejected,
+}
+
+/// CTR detection method
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "text")]
+pub enum DetectionMethod {
+    Automatic,
+    Manual,
+}
+
+/// Transaction direction for CTR reporting
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "text")]
+pub enum TransactionDirection {
+    Debit,
+    Credit,
+}
+
+/// Currency Transaction Report
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Ctr {
+    pub ctr_id: Uuid,
+    pub reporting_period: DateTime<Utc>,
+    pub ctr_type: CtrType,
+    pub subject_kyc_id: Uuid,
+    pub subject_full_name: String,
+    pub subject_identification: String,
+    pub subject_address: String,
+    pub total_transaction_amount: rust_decimal::Decimal,
+    pub transaction_count: i32,
+    pub transaction_references: Vec<String>,
+    pub detection_method: DetectionMethod,
+    pub status: CtrStatus,
+    pub assigned_compliance_officer: Option<Uuid>,
+    pub filing_timestamp: Option<DateTime<Utc>>,
+    pub regulatory_reference_number: Option<String>,
+}
+
+/// CTR aggregation tracking for threshold monitoring
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct CtrAggregation {
+    pub subject_id: Uuid,
+    pub aggregation_window_start: DateTime<Utc>,
+    pub aggregation_window_end: DateTime<Utc>,
+    pub running_total_amount: rust_decimal::Decimal,
+    pub transaction_count: i32,
+    pub transaction_amounts: Vec<rust_decimal::Decimal>,
+    pub transaction_timestamps: Vec<DateTime<Utc>>,
+    pub threshold_breach_flag: bool,
+}
+
+/// Individual transaction linked to a CTR
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct CtrTransaction {
+    pub ctr_id: Uuid,
+    pub transaction_id: Uuid,
+    pub transaction_timestamp: DateTime<Utc>,
+    pub transaction_type: String,
+    pub transaction_amount_ngn: rust_decimal::Decimal,
+    pub counterparty_details: String,
+    pub direction: TransactionDirection,
+}
+
+/// CTR filing details and regulatory submission tracking
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct CtrFiling {
+    pub ctr_id: Uuid,
+    pub filing_method: String,
+    pub submission_timestamp: DateTime<Utc>,
+    pub regulatory_submission_reference: String,
+    pub acknowledgement_timestamp: Option<DateTime<Utc>>,
+    pub acknowledgement_reference: Option<String>,
+    pub rejection_details: Option<String>,
+}
+
+/// CTR exemption for subjects that qualify for reporting exemptions
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct CtrExemption {
+    pub subject_id: Uuid,
+    pub exemption_category: String,
+    pub exemption_basis: String,
+    pub expiry_date: Option<DateTime<Utc>>,
+}

@@ -20,7 +20,7 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = ["database", "cache"]
 integration = []
-database = [ "dep:tokio", "dep:async-trait", "dep:uuid", "dep:chrono", "dep:serde", "dep:serde_json", "dep:tracing", "dep:tracing-subscriber", "dep:axum", "dep:tower", "dep:tower-http", "dep:regex", "dep:http", "dep:sqlx", "dep:hmac", "dep:sha2", "dep:hex", "dep:bigdecimal", "dep:rust_decimal", "dep:stellar-strkey", "dep:ed25519-dalek", "dep:stellar-xdr", "dep:utoipa", "dep:utoipa-swagger-ui", "dep:argon2", "dep:rand", "dep:bcrypt", "dep:totp-rs", "dep:webauthn-rs", "dep:sha1", "dep:jsonwebtoken", "dep:aes-gcm", "dep:p384", "dep:elliptic-curve", "dep:hkdf", "dep:zeroize", "dep:openssl" ]
+database = [ "dep:tokio", "dep:async-trait", "dep:uuid", "dep:chrono", "dep:serde", "dep:serde_json", "dep:tracing", "dep:tracing-subscriber", "dep:axum", "dep:tower", "dep:tower-http", "dep:regex", "dep:http", "dep:sqlx", "dep:hmac", "dep:sha2", "dep:hex", "dep:bigdecimal", "dep:rust_decimal", "dep:stellar-strkey", "dep:ed25519-dalek", "dep:stellar-xdr", "dep:utoipa", "dep:utoipa-swagger-ui", "dep:argon2", "dep:rand", "dep:bcrypt", "dep:totp-rs", "dep:webauthn-rs", "dep:sha1", "dep:jsonwebtoken", "dep:aes-gcm", "dep:p384", "dep:elliptic-curve", "dep:hkdf", "dep:zeroize", "dep:openssl", "dep:qrcode", "dep:image", "dep:urlencoding" ]
 cache = ["dep:redis", "dep:bb8", "dep:bb8-redis", "dep:moka", "dep:prometheus", "dep:tokio-util", "database"]
 
 # Distributed tracing via OpenTelemetry (Issue #104).
@@ -66,7 +66,7 @@ serde      = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0",                        optional = true }
 
 # --- Database ---
-sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "bigdecimal"], optional = true }
+sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "bigdecimal", "rust_decimal"], optional = true }
 
 # In-process L1 cache
 moka = { version = "0.12", features = ["future"], optional = true }
@@ -109,6 +109,13 @@ anyhow    = "1.0.100"
 thiserror = "2.0.18"
 
 # --- Nigerian bank account validation ---
+# --- Zero-copy XDR parsing (Issue #345) ---
+# zerocopy: safe zero-copy byte-to-struct casting without unsafe blocks.
+# bytes: reference-counted byte buffer for buffer pooling.
+zerocopy = { version = "0.7.35", features = ["derive"] }
+bytes    = "1.6.0"
+
+# --- Nigerian bank account validation ---
 nuban = "1.1.0"
 csv = "1.3"
 serde_yaml = "0.9"
@@ -117,8 +124,18 @@ serde_yaml = "0.9"
 utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"], optional = true }
 utoipa-swagger-ui = { version = "8", features = ["axum"], optional = true }
 
+# QR code generation for POS payments
+qrcode = { version = "0.14", optional = true }
+image = { version = "0.25", optional = true }
+urlencoding = { version = "2.1", optional = true }
+
 # Prometheus metrics
 prometheus = { version = "0.13", features = ["process"], optional = true }
+lazy_static = "1.4"
+
+# PDF & Reporting
+typst = "0.11"
+chrono-tz = "0.9"
 
 # Additional crypto dependencies for admin auth
 totp-rs = { version = "5.1", optional = true }
@@ -153,6 +170,9 @@ zeroize   = { version = "1.7", features = ["derive"], optional = true }
 
 # MaxMind GeoIP2 for IP geolocation
 maxminddb = { version = "0.24", optional = true }
+
+# Hostname for hardware signature in audit ledger
+hostname = "0.4"
 
 # ---------------------------------------------------------------------------
 # OpenTelemetry — distributed tracing (Issue #104, gated by "telemetry" feature)
@@ -239,6 +259,9 @@ required-features = ["database"]
 # Dev dependencies
 # ---------------------------------------------------------------------------
 [dev-dependencies]
+# Criterion benchmarking harness (Issue #345)
+criterion = { version = "0.5.1", features = ["html_reports"] }
+
 soroban-sdk = { version = "25.0.1", features = ["testutils"] }
 wiremock = "0.6"
 serde_json = "1.0"
@@ -249,6 +272,8 @@ tokio       = { version = "1.49.0", features = ["full"] }
 tokio-test  = "0.4"
 bigdecimal  = "0.4"
 proptest    = "1.4"
+base64      = "0.22.1"
+uuid        = { version = "1.6", features = ["v4"] }
 
 [[test]]
 name = "payload_encryption_test"
@@ -273,4 +298,36 @@ required-features = ["integration"]
 [[test]]
 name = "bug_bounty_integration"
 path = "tests/bug_bounty_integration.rs"
+required-features = ["database"]
+
+[[test]]
+name = "wallet_unit_tests"
+path = "tests/wallet_unit_tests.rs"
+required-features = ["database"]
+
+[[test]]
+name = "wallet_integration_tests"
+path = "tests/wallet_integration_tests.rs"
+required-features = ["integration"]
+
+[[test]]
+name = "multisig_governance_test"
+path = "tests/multisig_governance_test.rs"
+required-features = ["database"]
+
+[[test]]
+name = "dispute_resolution_tests"
+path = "tests/dispute_resolution_tests.rs"
+required-features = ["database"]
+# ---------------------------------------------------------------------------
+# Benchmarks (Issue #345 -- zero-copy XDR parser)
+# ---------------------------------------------------------------------------
+[[bench]]
+name = "xdr_parser"
+path = "benches/xdr_parser.rs"
+harness = false
+
+[[test]]
+name = "audit_ledger_integration"
+path = "tests/audit_ledger_integration.rs"
 required-features = ["database"]

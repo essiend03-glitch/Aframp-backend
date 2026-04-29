@@ -343,3 +343,94 @@ mod tests {
         assert_eq!(warning_health.details, Some("Slow response".to_string()));
     }
 }
+
+// ---------------------------------------------------------------------------
+// Edge / replica health (Issue #348)
+// ---------------------------------------------------------------------------
+
+/// Maximum tolerated replication lag before the health endpoint returns 503.
+/// DNS failover is triggered when this threshold is breached.
+pub const REPLICATION_LAG_THRESHOLD_SECS: i64 = 5;
+
+/// Check replication lag on the read replica.
+///
+/// Queries `pg_stat_replication` on the primary (via `DATABASE_URL`) and
+/// returns the lag in seconds.  Returns `None` when no replica is configured.
+pub async fn check_replication_lag(
+    primary_pool: &sqlx::PgPool,
+) -> Result<Option<i64>, Box<dyn std::error::Error + Send + Sync>> {
+    // pg_stat_replication is only populated on the primary.
+    let row: Option<(Option<f64>,)> = sqlx::query_as(
+        "SELECT EXTRACT(EPOCH FROM write_lag)::float8 \
+         FROM pg_stat_replication \
+         ORDER BY write_lag DESC NULLS LAST \
+         LIMIT 1",
+    )
+    .fetch_optional(primary_pool)
+    .await?;
+
+    Ok(row.and_then(|(lag,)| lag.map(|l| l as i64)))
+}
+
+/// Axum handler: `GET /health/edge`
+///
+/// Returns 200 when the gateway is healthy and replication lag is within
+/// threshold.  Returns 503 when lag exceeds `REPLICATION_LAG_THRESHOLD_SECS`,
+/// signalling the DNS load balancer to fail over to the next closest region.
+pub async fn edge_health_handler(
+    axum::extract::State(checker): axum::extract::State<std::sync::Arc<HealthChecker>>,
+) -> impl axum::response::IntoResponse {
+    use axum::http::StatusCode;
+    use serde_json::json;
+
+    let region = crate::gateway::region::current_region();
+
+    // Run the standard health check first.
+    let status = checker.check_health().await;
+    if !status.is_healthy() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(json!({
+                "status": "unhealthy",
+                "region": region,
+                "reason": "dependency_failure"
+            })),
+        );
+    }
+
+    // Check replication lag if a primary pool is available.
+    if let Some(pool) = &checker.db_pool {
+        match check_replication_lag(pool).await {
+            Ok(Some(lag)) if lag > REPLICATION_LAG_THRESHOLD_SECS => {
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    axum::Json(json!({
+                        "status": "unhealthy",
+                        "region": region,
+                        "reason": "replication_lag",
+                        "lag_secs": lag,
+                        "threshold_secs": REPLICATION_LAG_THRESHOLD_SECS
+                    })),
+                );
+            }
+            Ok(lag) => {
+                return (
+                    StatusCode::OK,
+                    axum::Json(json!({
+                        "status": "healthy",
+                        "region": region,
+                        "replication_lag_secs": lag
+                    })),
+                );
+            }
+            Err(e) => {
+                tracing::warn!("Could not query replication lag: {e}");
+            }
+        }
+    }
+
+    (
+        StatusCode::OK,
+        axum::Json(json!({ "status": "healthy", "region": region })),
+    )
+}

@@ -24,6 +24,10 @@ pub mod database;
 #[cfg(feature = "database")]
 pub mod chains;
 
+// Partner ecosystem integrations
+#[cfg(feature = "database")]
+pub mod partner;
+
 // Error handling
 #[cfg(feature = "database")]
 pub mod error;
@@ -151,6 +155,25 @@ pub mod vault;
 // Treasury Emergency Intervention Framework — one-click peg stabilisation
 #[cfg(feature = "database")]
 pub mod treasury;
+
+// In-House CFO — Autonomous Agent Treasury Management
+#[cfg(feature = "database")]
+pub mod agent_cfo;
+
+// Agent Swarm Intelligence — decentralized P2P coordination layer
+#[cfg(feature = "database")]
+pub mod agent_swarm;
+
+// Performance SLA Management & Breach Response (Issue #405)
+#[cfg(feature = "database")]
+pub mod sla;
+// Agent Admin Dashboard — HITL control system for autonomous agents
+#[cfg(feature = "database")]
+pub mod agent_dashboard;
+
+// Multi-Signature Governance Framework — M-of-N signing for Mint/Burn/SetOptions
+#[cfg(feature = "database")]
+pub mod multisig;
 // Adaptive rate limiting and throttling system
 #[cfg(feature = "cache")]
 pub mod adaptive_rate_limit;
@@ -169,13 +192,86 @@ pub mod abuse_detection;
 // Security module - anomaly detection and circuit breaker
 #[cfg(feature = "database")]
 pub mod security;
+
+// Oracle price feed — multi-source aggregator with weighted median (Issue #1.02)
+#[cfg(feature = "database")]
+pub mod oracle;
 // Compliance Registry — license tracking, regulatory constraints, corridor governance (Issue #2.02)
 #[cfg(feature = "database")]
 pub mod compliance_registry;
 
+// LP Onboarding & Partner Portal — institutional liquidity provider onboarding,
+// agreement lifecycle, Stellar key allowlisting
+#[cfg(feature = "database")]
+pub mod lp_onboarding;
+
 // Cross-border payment corridor implementations
 #[cfg(feature = "database")]
 pub mod corridors;
+
+// Issue #334 — Merchant CRM & Customer Insights
+#[cfg(feature = "database")]
+pub mod merchant_crm;
+
+// Issue #333 — Merchant Invoicing & Automated Tax Calculation
+#[cfg(feature = "database")]
+pub mod merchant_invoicing;
+
+// Issue #336 — Merchant Multi-Sig & Treasury Controls
+#[cfg(feature = "database")]
+pub mod merchant_multisig;
+
+// Issue #335 — Multi-Store & Franchise Management
+#[cfg(feature = "database")]
+pub mod franchise;
+
+// Issue #322 — Wallet Creation & Stellar Account Provisioning
+#[cfg(feature = "database")]
+pub mod wallet_provisioning;
+// Non-custodial wallet architecture, recovery, history, and portfolio
+#[cfg(feature = "database")]
+pub mod wallet;
+// POS QR Payment System — Physical retail integration
+#[cfg(feature = "database")]
+pub mod pos;
+
+// Issue #338 — Open-Source AI Agent SDK for Stellar
+// Provides an intent-based API for autonomous AI agents to manage their own
+// economic lifecycle on the Stellar network using cNGN and the x402 protocol.
+#[cfg(feature = "database")]
+pub mod agent_sdk;
+
+// Merchant Gateway — Commercial adoption entry point for businesses
+#[cfg(feature = "database")]
+pub mod merchant_gateway;
+
+// Autonomous Bargaining Protocol — agent-to-agent negotiation with x402 entrance fee
+// and Soroban escrow-on-success (Issue #5.03)
+#[cfg(feature = "database")]
+pub mod negotiation;
+// KYA (Know Your Agent) — Decentralized Agent Identity & Reputation System
+// Provides DID-based identity registry, on-chain reputation, attestations,
+// zero-knowledge competence proofs, and cross-platform reputation portability
+#[cfg(feature = "database")]
+pub mod kya;
+// Issue #337 — Merchant Dispute Resolution & Clawback Management
+#[cfg(feature = "database")]
+pub mod dispute;
+
+// Issue #407 — Banking Partner Integration & Account Linkage
+#[cfg(feature = "database")]
+pub mod banking;
+// Issue #379 — cNGN Collateralized Lending
+#[cfg(feature = "database")]
+pub mod collateral_lending;
+
+// Issue #399 — Event-Driven Architecture (async event bus, DLQ, idempotent consumers)
+#[cfg(feature = "database")]
+pub mod event_bus;
+
+// Issue #393 — Travel Rule Compliance (FATF Rec. 16, IVMS101, TRISA/TRUST/OpenVASP)
+#[cfg(feature = "database")]
+pub mod travel_rule;
 
 // Contract error enum for Soroban (only when not using database feature)
 #[cfg(not(feature = "database"))]

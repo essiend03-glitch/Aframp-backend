@@ -1,3 +1,4 @@
+pub mod xdr_parser;
 pub mod burn_transaction_builder;
 pub mod client;
 pub mod config;
@@ -7,6 +8,8 @@ pub mod payment;
 pub mod service;
 pub mod trustline;
 pub mod types;
+pub mod sep;
+pub mod dex_liquidity;
 
 #[cfg(test)]
 mod tests;

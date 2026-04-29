@@ -117,6 +117,59 @@ impl WebhookProcessor {
         }
     }
 
+    pub async fn enqueue_webhook(
+        &self,
+        provider_name: &str,
+        signature: Option<&str>,
+        payload: &JsonValue,
+    ) -> Result<String, WebhookProcessorError> {
+        let provider = self.parse_provider(provider_name)?;
+        let signature = signature.ok_or(WebhookProcessorError::InvalidSignature)?;
+
+        let provider_impl = self
+            .provider_factory
+            .get_provider(provider)
+            .map_err(|e| WebhookProcessorError::ProcessingError(e.to_string()))?;
+
+        let payload_bytes = serde_json::to_vec(payload)
+            .map_err(|e| WebhookProcessorError::ProcessingError(e.to_string()))?;
+        let verification = provider_impl
+            .verify_webhook(&payload_bytes, signature)
+            .map_err(|e| WebhookProcessorError::ProcessingError(e.to_string()))?;
+
+        if !verification.valid {
+            error!(provider = %provider_name, "Invalid webhook signature");
+            return Err(WebhookProcessorError::InvalidSignature);
+        }
+
+        let event = provider_impl
+            .parse_webhook_event(&payload_bytes)
+            .map_err(|e| WebhookProcessorError::ProcessingError(e.to_string()))?;
+        let event_id = self.extract_event_id(&event.payload, provider_name);
+
+        let webhook_event = self
+            .webhook_repo
+            .log_event(
+                &event_id,
+                provider_name,
+                &event.event_type,
+                payload.clone(),
+                Some(signature),
+                None,
+            )
+            .await
+            .map_err(|e| WebhookProcessorError::DatabaseError(e.to_string()))?;
+
+        info!(
+            event_id = %webhook_event.event_id,
+            provider = %provider_name,
+            event_type = %webhook_event.event_type,
+            "Webhook accepted into durable queue"
+        );
+
+        Ok(webhook_event.event_id)
+    }
+
     async fn process_event(
         &self,
         _webhook_event: &crate::database::webhook_repository::WebhookEvent,

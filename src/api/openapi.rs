@@ -492,6 +492,16 @@ See the cNGN Integration Guide in `/docs/cngn/` for setup instructions.
         ReserveDataPointSchema,
         TransparencyHistorySchema,
     )),
+    paths(
+        crate::partner::handlers::register_partner,
+        crate::partner::handlers::get_partner,
+        crate::partner::handlers::provision_credential,
+        crate::partner::handlers::revoke_credential,
+        crate::partner::handlers::validate_partner,
+        crate::partner::handlers::promote_to_production,
+        crate::partner::handlers::list_deprecations,
+        crate::partner::handlers::partner_me,
+    ),
     tags(
         (name = "onramp", description = "NGN to cNGN conversion (fiat to crypto)"),
         (name = "offramp", description = "cNGN to NGN conversion (crypto to fiat)"),
@@ -501,6 +511,7 @@ See the cNGN Integration Guide in `/docs/cngn/` for setup instructions.
         (name = "batch", description = "Batch transaction processing"),
         (name = "admin", description = "Administrative endpoints — require admin authentication"),
         (name = "transparency", description = "Public Proof-of-Reserves data feed for aggregators"),
+        (name = "partner", description = "Partner Integration Framework — self-service onboarding, credential management, and API versioning"),
     ),
     modifiers(&SecurityAddon),
     servers(

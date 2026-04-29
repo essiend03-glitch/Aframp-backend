@@ -9,6 +9,10 @@ pub enum CacheError {
     KeyError(String),
     TtlError(String),
     OperationError(String),
+    LockError(String),
+    ConfigurationError(String),
+    InvalidatonError(String),
+    PerformanceError(String),
 }
 
 impl fmt::Display for CacheError {
@@ -19,6 +23,10 @@ impl fmt::Display for CacheError {
             CacheError::KeyError(msg) => write!(f, "Cache key error: {}", msg),
             CacheError::TtlError(msg) => write!(f, "Cache TTL error: {}", msg),
             CacheError::OperationError(msg) => write!(f, "Cache operation error: {}", msg),
+            CacheError::LockError(msg) => write!(f, "Cache lock error: {}", msg),
+            CacheError::ConfigurationError(msg) => write!(f, "Cache configuration error: {}", msg),
+            CacheError::InvalidatonError(msg) => write!(f, "Cache invalidation error: {}", msg),
+            CacheError::PerformanceError(msg) => write!(f, "Cache performance error: {}", msg),
         }
     }
 }

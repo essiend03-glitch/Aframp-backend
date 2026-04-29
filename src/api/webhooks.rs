@@ -50,15 +50,24 @@ pub async fn handle_webhook(
         }
     };
 
-    // Process webhook
+    // Queue webhook for asynchronous processing. This keeps provider callback
+    // latency independent of downstream database, payment, or merchant systems.
     match state
         .processor
-        .process_webhook(&provider, signature.as_deref(), &payload)
+        .enqueue_webhook(&provider, signature.as_deref(), &payload)
         .await
     {
-        Ok(_) => {
-            info!(provider = %provider, "Webhook processed successfully");
-            (StatusCode::OK, Json(serde_json::json!({"status": "ok"}))).into_response()
+        Ok(event_id) => {
+            info!(provider = %provider, event_id = %event_id, "Webhook queued successfully");
+            (
+                StatusCode::ACCEPTED,
+                Json(serde_json::json!({
+                    "status": "accepted",
+                    "event_id": event_id,
+                    "delivery": "queued"
+                })),
+            )
+                .into_response()
         }
         Err(WebhookProcessorError::InvalidSignature) => {
             warn!(provider = %provider, "Invalid webhook signature");
@@ -66,11 +75,19 @@ pub async fn handle_webhook(
         }
         Err(WebhookProcessorError::AlreadyProcessed) => {
             info!(provider = %provider, "Webhook already processed");
-            (StatusCode::OK, Json(serde_json::json!({"status": "ok"}))).into_response()
+            (
+                StatusCode::ACCEPTED,
+                Json(serde_json::json!({"status": "accepted"})),
+            )
+                .into_response()
         }
         Err(e) => {
             error!(provider = %provider, error = %e, "Webhook processing failed");
-            (StatusCode::OK, Json(serde_json::json!({"status": "ok"}))).into_response()
+            (
+                StatusCode::ACCEPTED,
+                Json(serde_json::json!({"status": "accepted"})),
+            )
+                .into_response()
         }
     }
 }
