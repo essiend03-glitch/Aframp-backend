@@ -200,5 +200,67 @@ pub fn sla_routes(state: Arc<SlaState>) -> axum::Router {
         // Compliance reports
         .route("/api/admin/sla/reports", get(list_reports))
         .route("/api/admin/sla/reports/generate", post(generate_report))
+        // Issue #464 — live status, policy management, breach resolution
+        .route("/api/v1/admin/infra/sla/status", get(get_infra_status))
+        .route("/api/v1/admin/infra/sla/policies", post(upsert_policy))
+        .route(
+            "/api/v1/admin/infra/sla/breaches/:id/resolve",
+            post(resolve_breach),
+        )
         .with_state(state)
+}
+
+// ── Issue #464 — Infra SLA endpoints ─────────────────────────────────────────
+
+pub async fn get_infra_status(
+    State(s): State<Arc<SlaState>>,
+) -> Result<Json<crate::sla::models::SlaStatusDashboard>, (StatusCode, String)> {
+    let (policies, breaches) = tokio::try_join!(
+        s.repo.list_active_policies(),
+        s.repo.list_breach_events(50),
+    )
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let total = policies.len() as f64;
+    let compliance_ratio_pct = if total > 0.0 {
+        // Simple heuristic: corridors with no breach in last 10 min are compliant
+        let recent_corridors: std::collections::HashSet<&str> =
+            breaches.iter().map(|b| b.corridor_id.as_str()).collect();
+        let compliant = policies
+            .iter()
+            .filter(|p| !recent_corridors.contains(p.corridor_id.as_str()))
+            .count() as f64;
+        (compliant / total) * 100.0
+    } else {
+        100.0
+    };
+
+    Ok(Json(crate::sla::models::SlaStatusDashboard {
+        policies,
+        recent_breaches: breaches,
+        compliance_ratio_pct,
+    }))
+}
+
+pub async fn upsert_policy(
+    State(s): State<Arc<SlaState>>,
+    Json(req): Json<crate::sla::models::CreatePolicyRequest>,
+) -> Result<Json<crate::sla::models::SlaPolicy>, (StatusCode, String)> {
+    s.repo
+        .upsert_policy(&req)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+pub async fn resolve_breach(
+    State(s): State<Arc<SlaState>>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<crate::sla::models::ResolveBreachRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    s.repo
+        .resolve_breach_event(id, &req.root_cause, &req.actor)
+        .await
+        .map(|_| StatusCode::NO_CONTENT)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }

@@ -6,6 +6,7 @@
 pub mod alerts;
 pub mod anomaly_detection;
 pub mod halt_queue;
+pub mod merkle;
 
 #[cfg(test)]
 pub mod tests;
@@ -18,3 +19,4 @@ pub use anomaly_detection::{
 pub use halt_queue::{
     HaltStatistics, HaltedTransactionRepository, HaltedTransactionStatus, SystemHaltQueueManager,
 };
+pub use merkle::{MerklePathNode, MerkleProof, MerkleTree, TenantBalance};

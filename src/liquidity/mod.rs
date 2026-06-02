@@ -1,5 +1,6 @@
 pub mod handlers;
 pub mod metrics;
+pub mod dark_pool;
 pub mod models;
 pub mod repository;
 pub mod routes;

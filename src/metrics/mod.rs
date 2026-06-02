@@ -7,6 +7,7 @@ pub mod analytics;
 pub mod geo_restriction;
 pub mod handler;
 pub mod issuer;
+pub mod por;
 pub mod tests;
 
 use prometheus::{
@@ -870,6 +871,7 @@ fn register_all(r: &Registry) {
     crate::gateway::metrics::register(r);
 
     backup::register(r);
+    por::register(r);
     #[cfg(feature = "database")]
     crate::analytics::metrics::register(r);
     crate::adaptive_rate_limit::metrics::register(r);

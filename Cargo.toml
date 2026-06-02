@@ -135,6 +135,7 @@ urlencoding = { version = "2.1", optional = true }
 # Prometheus metrics
 prometheus = { version = "0.13", features = ["process"], optional = true }
 lazy_static = "1.4"
+rayon = "1.10"
 
 # PDF & Reporting
 typst = "0.11"
@@ -271,6 +272,11 @@ path = "tests/hmac_signing_test.rs"
 required-features = ["database"]
 
 [[test]]
+name = "stellar_ecosystem_integration"
+path = "tests/stellar_ecosystem_integration.rs"
+required-features = ["database"]
+
+[[test]]
 name = "ddos_integration"
 path = "tests/ddos_integration.rs"
 required-features = ["cache"]
@@ -400,6 +406,11 @@ required-features = ["database"]
 name = "audit_ledger_integration"
 path = "tests/audit_ledger_integration.rs"
 required-features = ["database"]
+
+# Issue #475 — Partner Compliance & Due Diligence
+[[test]]
+name = "partner_compliance_integration"
+path = "tests/partner_compliance_integration.rs"
 
 [[test]]
 name = "rate_limit_test"

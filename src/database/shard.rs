@@ -7,9 +7,14 @@
 //! - One `PgPool` per shard, created lazily on first use.
 //! - Hot-reload: call `ShardRouter::reload(coordinator_pool)` to pick up
 //!   changes to `shard_registry` without restarting the process.
+//! - Read-Your-Writes (RYW): after a write, `RywTracker::record_write` marks
+//!   the session as "dirty".  `ShardRouter::read_pool_for_session` then routes
+//!   the next read to the primary until the replica catches up or the TTL
+//!   expires, guaranteeing the writer sees their own committed data.
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
@@ -17,6 +22,55 @@ use tokio::sync::RwLock;
 use tracing::{info, warn};
 
 use crate::database::error::DatabaseError;
+use crate::database::replication_monitor::ReplicationMonitor;
+
+// ---------------------------------------------------------------------------
+// Read-Your-Writes session tracker
+// ---------------------------------------------------------------------------
+
+/// Per-session RYW state.  Stored in a `DashMap`-like structure keyed by
+/// session/user ID.  We use a plain `RwLock<HashMap>` to avoid adding a new
+/// dependency.
+pub struct RywTracker {
+    /// session_id → expiry instant (primary routing required until then).
+    sessions: RwLock<HashMap<String, Instant>>,
+    /// How long after a write the session must read from the primary.
+    ttl: Duration,
+}
+
+impl RywTracker {
+    pub fn new(ttl: Duration) -> Arc<Self> {
+        Arc::new(Self {
+            sessions: RwLock::new(HashMap::new()),
+            ttl,
+        })
+    }
+
+    /// Record that `session_id` just performed a write.
+    /// Subsequent reads within `ttl` will be routed to the primary.
+    pub async fn record_write(&self, session_id: &str) {
+        let expiry = Instant::now() + self.ttl;
+        self.sessions
+            .write()
+            .await
+            .insert(session_id.to_string(), expiry);
+    }
+
+    /// Returns `true` if the session must read from the primary (RYW window active).
+    pub async fn requires_primary(&self, session_id: &str) -> bool {
+        let sessions = self.sessions.read().await;
+        match sessions.get(session_id) {
+            Some(&expiry) => Instant::now() < expiry,
+            None => false,
+        }
+    }
+
+    /// Evict expired sessions (call periodically to prevent unbounded growth).
+    pub async fn evict_expired(&self) {
+        let now = Instant::now();
+        self.sessions.write().await.retain(|_, exp| *exp > now);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Shard descriptor (mirrors shard_registry row)
@@ -152,6 +206,33 @@ impl ShardRouter {
             .get(&shard_id)
             .cloned()
             .ok_or_else(|| DatabaseError::from_message(&format!("No pool for shard {}", shard_id)))
+    }
+
+    /// Route a read to the correct pool, respecting RYW and circuit-breaker state.
+    ///
+    /// - If `ryw` is `Some` and the session has an active write window → primary.
+    /// - If `monitor` is `Some` and the circuit breaker is open → primary.
+    /// - Otherwise → shard pool (replica-backed in production).
+    pub async fn read_pool_for_session(
+        &self,
+        key: &str,
+        session_id: Option<&str>,
+        ryw: Option<&RywTracker>,
+        monitor: Option<&ReplicationMonitor>,
+    ) -> Result<PgPool, DatabaseError> {
+        // RYW check
+        if let (Some(sid), Some(tracker)) = (session_id, ryw) {
+            if tracker.requires_primary(sid).await {
+                return Ok(self.coordinator.clone());
+            }
+        }
+        // Circuit-breaker check
+        if let Some(m) = monitor {
+            if m.is_open() {
+                return Ok(self.coordinator.clone());
+            }
+        }
+        self.pool_for_key(key).await
     }
 
     /// Route a shard key to the correct pool for writes.

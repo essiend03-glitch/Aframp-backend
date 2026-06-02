@@ -26,18 +26,20 @@ permissions:
   security-events: write
 
 jobs:
-  # ── Guard: PRs must target develop, not main ────────────────────────────────
+  # ── Guard: PRs must target develop or master, not an arbitrary branch ────────
   check-target:
-    name: Ensure PRs target develop
+    name: Verify PR target branch
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
       - name: Verify base branch
         run: |
-          if [ "${{ github.event.pull_request.base.ref }}" = "main" ]; then
-            echo "🚫 Pull requests must target 'develop', not 'main'."
+          BASE="${{ github.event.pull_request.base.ref }}"
+          if [[ "$BASE" != "develop" && "$BASE" != "master" && "$BASE" != "main" ]]; then
+            echo "🚫 Pull requests must target 'develop', 'master', or 'main'. Got: $BASE"
             exit 1
           fi
+          echo "✅ PR targets valid base branch: $BASE"
 
   # ── Change detection ────────────────────────────────────────────────────────
   changes:

@@ -1,0 +1,5 @@
+invokeContract(
+  contractHash,
+  method,
+  args,
+)

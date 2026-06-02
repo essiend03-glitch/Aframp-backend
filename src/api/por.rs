@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::sync::Arc;
 use tracing::info;
+use crate::security::{MerklePathNode, MerkleProof, MerkleTree};
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -182,11 +183,111 @@ pub async fn get_por(State(state): State<Arc<PorState>>) -> Response {
         .into_response()
 }
 
+#[derive(Debug, Deserialize)]
+pub struct VerifyProofParams {
+    pub proof: Option<String>,
+    pub leaf: Option<String>,
+    pub root: Option<String>,
+    pub index: Option<usize>,
+    pub path: Option<String>,
+}
+
+pub async fn verify_proof(
+    State(state): State<Arc<PorState>>,
+    axum::extract::Query(params): axum::extract::Query<VerifyProofParams>,
+) -> Response {
+    let proof = if let Some(proof_json) = params.proof {
+        match serde_json::from_str::<MerkleProof>(&proof_json) {
+            Ok(p) => p,
+            Err(_) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "verified": false, "error": "Invalid proof JSON format" })),
+                )
+                    .into_response();
+            }
+        }
+    } else if let (Some(leaf), Some(root), Some(index), Some(path_str)) =
+        (params.leaf, params.root, params.index, params.path)
+    {
+        let path = match serde_json::from_str::<Vec<MerklePathNode>>(&path_str) {
+            Ok(p) => p,
+            Err(_) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "verified": false, "error": "Invalid path JSON format" })),
+                )
+                    .into_response();
+            }
+        };
+        MerkleProof { leaf, root, index, path }
+    } else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "verified": false,
+                "error": "Missing proof parameter or (leaf, root, index, path) parameters"
+            })),
+        )
+            .into_response();
+    };
+
+    // 1. Verify mathematically
+    let math_ok = MerkleTree::verify_proof(&proof);
+    if !math_ok {
+        return (
+            StatusCode::OK,
+            Json(serde_json::json!({ "verified": false, "error": "Mathematical verification failed" })),
+        )
+            .into_response();
+    }
+
+    // 2. Verify root exists in registry
+    let root_exists: bool = match sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM merkle_proof_registry WHERE merkle_root_hash = $1
+        )
+        "#,
+    )
+    .bind(&proof.root)
+    .fetch_one(&state.db)
+    .await
+    {
+        Ok(exists) => exists,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "verified": false, "error": format!("Database error: {}", e) })),
+            )
+                .into_response();
+        }
+    };
+
+    if !root_exists {
+        return (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "verified": false,
+                "error": "Root hash is not registered in the system"
+            })),
+        )
+            .into_response();
+    }
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({ "verified": true })),
+    )
+        .into_response()
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 
 pub fn por_routes(state: Arc<PorState>) -> Router {
     Router::new()
         .route("/v1/transparency/por", get(get_por))
+        .route("/api/v1/compliance/por/verify-proof", get(verify_proof))
         .with_state(state)
 }
 

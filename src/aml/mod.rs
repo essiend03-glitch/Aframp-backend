@@ -11,6 +11,12 @@
 //! - CTR review and approval workflow
 //! - CTR document generation and regulatory filing
 //! - CTR batch filing and deadline monitoring
+//!
+//! ## ML Optimization Layer (Issue #394)
+//! - `ml_models`          — feature extraction, logistic-regression scoring, SHAP explainability
+//! - `training_pipeline`  — supervised training from analyst TP/FP decisions
+//! - `champion_challenger`— shadow mode, A/B routing, safe model promotion
+//! - `drift_detection`    — PSI-based feature drift + accuracy degradation alerts
 
 pub mod models;
 pub mod screening;
@@ -34,6 +40,15 @@ pub mod ctr_reconciliation;
 pub mod ctr_reconciliation_handlers;
 pub mod ctr_metrics;
 pub mod ctr_logging;
+
+// ---------------------------------------------------------------------------
+// ML Optimization Layer — Issue #394
+// ---------------------------------------------------------------------------
+pub mod ml_models;
+pub mod training_pipeline;
+pub mod champion_challenger;
+pub mod drift_detection;
+pub mod ml_screening_layer;
 
 #[cfg(test)]
 pub mod ctr_tests;
@@ -61,3 +76,20 @@ pub use ctr_batch_filing::{CtrBatchFilingService, BatchFilingConfig, BatchFiling
 pub use ctr_batch_filing_handlers::{CtrBatchFilingState, batch_file_ctrs, get_deadline_status};
 pub use ctr_reconciliation::{CtrReconciliationService, ReconciliationRequest, ReconciliationResult, ReconciliationDiscrepancy, MonthlyActivityReport, StatusBreakdown, TypeBreakdown, SubjectSummary, FilingPerformance};
 pub use ctr_reconciliation_handlers::{CtrReconciliationState, reconcile_ctrs, get_monthly_report};
+
+// ML Optimization Layer re-exports
+pub use ml_models::{
+    AmlFeatureVector, ModelWeights, AmlMlScorer, MlScoringResult, MlRecommendation,
+    FeatureAttribution, AttributionDirection, TrainingSample,
+    FP_SUPPRESSION_THRESHOLD, FP_DOWNGRADE_THRESHOLD,
+};
+pub use training_pipeline::{AmlTrainingPipeline, TrainingConfig, TrainingResult};
+pub use champion_challenger::{
+    ChampionChallengerFramework, ChampionChallengerConfig, ShadowEvaluation, PromotionDecision,
+};
+pub use drift_detection::{
+    AmlDriftDetector, DriftDetectionConfig, DriftCheckResult,
+    FeatureDriftReport, AccuracyDriftReport, DriftSeverity,
+    PSI_STABLE, PSI_WARNING, PSI_CRITICAL,
+};
+pub use ml_screening_layer::{MlAugmentedScreener, MlEnrichedScreeningResult};
