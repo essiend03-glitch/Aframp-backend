@@ -270,17 +270,21 @@ pub mod event_bus;
 #[cfg(feature = "database")]
 pub mod travel_rule;
 
-// Issue #523 — Automated Regulatory Report Generation & Compliance Filings Pipeline
+// Issue #487 — Smart Order Routing & Treasury Rebalancing
 #[cfg(feature = "database")]
-pub mod regulatory_filing;
+pub mod sor;
 
-// Issue #524 — Programmable Sovereign Debt Settlement & Tokenized Treasury Bond Rails
+// Issue #488 — Flash Liquidity Provisioning & On-Chain Credit Facilities
 #[cfg(feature = "database")]
-pub mod treasury_bonds;
+pub mod flash_liquidity;
 
-// Issue #525 — Automated Central Bank Clearing & Interbank Settlement Rail (RTGS Bridge)
+// Issue #491 — Decentralized Compliance Oracle & Identity Verification Bridge
 #[cfg(feature = "database")]
-pub mod rtgs;
+pub mod compliance_oracle;
+
+// Issue #490 — Automated Gas & Fee Optimization Engine
+#[cfg(feature = "database")]
+pub mod fee_optimizer;
 
 // Contract error enum for Soroban (only when not using database feature)
 #[cfg(not(feature = "database"))]
