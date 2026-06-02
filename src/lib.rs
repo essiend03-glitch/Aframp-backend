@@ -70,6 +70,10 @@ pub mod analytics;
 #[cfg(feature = "database")]
 pub mod lp_payout;
 
+// Partner Revenue Sharing & Commission Management Engine (Issue #471)
+#[cfg(feature = "database")]
+pub mod commission;
+
 // Data classification framework — authoritative sensitivity taxonomy and
 // policy enforcement for every data field on the platform.
 #[cfg(feature = "database")]
