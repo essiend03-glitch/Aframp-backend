@@ -1,8 +1,374 @@
-//! PEP data models
+//! PEP data models - Extended for comprehensive PEP screening and monitoring
+//! Issue #348 - Complete PEP Management System
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+// ============================================================================
+// PEP Category (domestic, foreign, international organization)
+// ============================================================================
+
+/// PEP category classification
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "text")]
+pub enum PepCategory {
+    /// Domestic PEP - political figure within the same country
+    DomesticPep,
+    /// Foreign PEP - political figure from another country
+    ForeignPep,
+    /// International Organization PEP - official of international org
+    InternationalOrgPep,
+}
+
+impl PepCategory {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PepCategory::DomesticPep => "domestic_pep",
+            PepCategory::ForeignPep => "foreign_pep",
+            PepCategory::InternationalOrgPep => "international_org_pep",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "domestic_pep" => PepCategory::DomesticPep,
+            "foreign_pep" => PepCategory::ForeignPep,
+            "international_org_pep" => PepCategory::InternationalOrgPep,
+            _ => PepCategory::ForeignPep,
+        }
+    }
+}
+
+// ============================================================================
+// PEP Status (current, former)
+// ============================================================================
+
+/// Current status of the PEP in their position
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "text")]
+pub enum PepStatus {
+    /// Currently holding the position
+    Current,
+    /// Former PEP who has left their position
+    Former,
+}
+
+impl PepStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PepStatus::Current => "current",
+            PepStatus::Former => "former",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "current" => PepStatus::Current,
+            "former" => PepStatus::Former,
+            _ => PepStatus::Current,
+        }
+    }
+}
+
+// ============================================================================
+// PEP Profile Status
+// ============================================================================
+
+/// Status of the PEP profile after screening and review
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "text")]
+pub enum PepProfileStatus {
+    /// Confirmed as a genuine PEP match
+    Confirmed,
+    /// Under review by compliance officer
+    UnderReview,
+    /// Determined to be a false positive
+    FalsePositive,
+    /// Cleared after review
+    Cleared,
+}
+
+impl PepProfileStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PepProfileStatus::Confirmed => "confirmed",
+            PepProfileStatus::UnderReview => "under_review",
+            PepProfileStatus::FalsePositive => "false_positive",
+            PepProfileStatus::Cleared => "cleared",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "confirmed" => PepProfileStatus::Confirmed,
+            "under_review" => PepProfileStatus::UnderReview,
+            "false_positive" => PepProfileStatus::FalsePositive,
+            "cleared" => PepProfileStatus::Cleared,
+            _ => PepProfileStatus::UnderReview,
+        }
+    }
+}
+
+// ============================================================================
+// Relationship Types (family members and close associates)
+// ============================================================================
+
+/// Family relationship types
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "text")]
+pub enum RelationshipType {
+    /// Spouse of PEP
+    Spouse,
+    /// Child of PEP
+    Child,
+    /// Parent of PEP
+    Parent,
+    /// Sibling of PEP
+    Sibling,
+}
+
+impl RelationshipType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RelationshipType::Spouse => "spouse",
+            RelationshipType::Child => "child",
+            RelationshipType::Parent => "parent",
+            RelationshipType::Sibling => "sibling",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "spouse" => RelationshipType::Spouse,
+            "child" => RelationshipType::Child,
+            "parent" => RelationshipType::Parent,
+            "sibling" => RelationshipType::Sibling,
+            _ => RelationshipType::Child,
+        }
+    }
+}
+
+/// Association type for close associates
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "text")]
+pub enum AssociationType {
+    /// Business partner relationship
+    BusinessPartner,
+    /// Known associate
+    KnownAssociate,
+}
+
+impl AssociationType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AssociationType::BusinessPartner => "business_partner",
+            AssociationType::KnownAssociate => "known_associate",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "business_partner" => AssociationType::BusinessPartner,
+            "known_associate" => AssociationType::KnownAssociate,
+            _ => AssociationType::KnownAssociate,
+        }
+    }
+}
+
+// ============================================================================
+// EDD Types and Status
+// ============================================================================
+
+/// Enhanced Due Diligence type
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "text")]
+pub enum EddType {
+    /// Standard EDD for PEPs
+    Standard,
+    /// Simplified EDD for lower risk
+    Simplified,
+    /// Ongoing enhanced monitoring
+    Ongoing,
+}
+
+impl EddType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EddType::Standard => "standard",
+            EddType::Simplified => "simplified",
+            EddType::Ongoing => "ongoing",
+        }
+    }
+}
+
+/// EDD status for a PEP profile
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "text")]
+pub enum EddStatus {
+    /// EDD not required
+    NotRequired,
+    /// EDD pending initiation
+    Pending,
+    /// EDD in progress
+    InProgress,
+    /// Pending senior management approval
+    PendingApproval,
+    /// EDD completed and approved
+    Completed,
+    /// EDD renewal required
+    RenewalRequired,
+    /// EDD overdue
+    Overdue,
+}
+
+impl EddStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EddStatus::NotRequired => "not_required",
+            EddStatus::Pending => "pending",
+            EddStatus::InProgress => "in_progress",
+            EddStatus::PendingApproval => "pending_approval",
+            EddStatus::Completed => "completed",
+            EddStatus::RenewalRequired => "renewal_required",
+            EddStatus::Overdue => "overdue",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "not_required" => EddStatus::NotRequired,
+            "pending" => EddStatus::Pending,
+            "in_progress" => EddStatus::InProgress,
+            "pending_approval" => EddStatus::PendingApproval,
+            "completed" => EddStatus::Completed,
+            "renewal_required" => EddStatus::RenewalRequired,
+            "overdue" => EddStatus::Overdue,
+            _ => EddStatus::Pending,
+        }
+    }
+}
+
+// ============================================================================
+// Transaction Monitoring Types
+// ============================================================================
+
+/// Transaction monitoring flag types
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "text")]
+pub enum MonitoringFlag {
+    /// Transaction exceeds PEP-specific threshold
+    ThresholdBreach,
+    /// Unusual transaction pattern detected
+    UnusualPattern,
+    /// Transaction to/from high-risk jurisdiction
+    HighRiskJurisdiction,
+    /// Rapid fund movement detected
+    RapidFundMovement,
+    /// Cash-equivalent transaction
+    CashEquivalent,
+}
+
+impl MonitoringFlag {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MonitoringFlag::ThresholdBreach => "threshold_breach",
+            MonitoringFlag::UnusualPattern => "unusual_pattern",
+            MonitoringFlag::HighRiskJurisdiction => "high_risk_jurisdiction",
+            MonitoringFlag::RapidFundMovement => "rapid_fund_movement",
+            MonitoringFlag::CashEquivalent => "cash_equivalent",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "threshold_breach" => MonitoringFlag::ThresholdBreach,
+            "unusual_pattern" => MonitoringFlag::UnusualPattern,
+            "high_risk_jurisdiction" => MonitoringFlag::HighRiskJurisdiction,
+            "rapid_fund_movement" => MonitoringFlag::RapidFundMovement,
+            "cash_equivalent" => MonitoringFlag::CashEquivalent,
+            _ => MonitoringFlag::ThresholdBreach,
+        }
+    }
+}
+
+/// Transaction review status
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "text")]
+pub enum ReviewStatus {
+    /// Pending review
+    Pending,
+    /// Currently under review
+    UnderReview,
+    /// Approved after review
+    Approved,
+    /// Cleared as legitimate
+    Cleared,
+}
+
+impl ReviewStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ReviewStatus::Pending => "pending",
+            ReviewStatus::UnderReview => "under_review",
+            ReviewStatus::Approved => "approved",
+            ReviewStatus::Cleared => "cleared",
+        }
+    }
+}
+
+// ============================================================================
+// Confidence Level for screening results
+// ============================================================================
+
+/// Confidence level of PEP match
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "text")]
+pub enum ConfidenceLevel {
+    /// Low confidence match (below threshold)
+    Low,
+    /// Medium confidence - requires manual verification
+    Medium,
+    /// High confidence - auto-create profile and initiate EDD
+    High,
+}
+
+impl ConfidenceLevel {
+    pub fn from_score(score: u8, has_dob_match: bool, has_nationality_match: bool) -> Self {
+        // Base score determines initial confidence
+        let mut adjusted_score = score as f32;
+
+        // DOB matching boosts confidence
+        if has_dob_match {
+            adjusted_score += 15.0;
+        }
+
+        // Nationality matching provides modest boost
+        if has_nationality_match {
+            adjusted_score += 5.0;
+        }
+
+        if adjusted_score >= 85.0 {
+            ConfidenceLevel::High
+        } else if adjusted_score >= 70.0 {
+            ConfidenceLevel::Medium
+        } else {
+            ConfidenceLevel::Low
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ConfidenceLevel::Low => "low",
+            ConfidenceLevel::Medium => "medium",
+            ConfidenceLevel::High => "high",
+        }
+    }
+}
+
+// ============================================================================
+// Influence Level (existing - kept for compatibility)
+// ============================================================================
 
 /// Influence level of the PEP — drives the base risk score
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]

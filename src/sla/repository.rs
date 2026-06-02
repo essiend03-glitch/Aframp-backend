@@ -304,3 +304,105 @@ impl SlaRepository {
         Ok((count, mttr, avail))
     }
 }
+
+    // ── Issue #464: SLA Policies ──────────────────────────────────────────────
+
+    pub async fn list_active_policies(&self) -> sqlx::Result<Vec<crate::sla::models::SlaPolicy>> {
+        sqlx::query_as!(
+            crate::sla::models::SlaPolicy,
+            "SELECT * FROM sla_policies WHERE enabled = TRUE ORDER BY corridor_id"
+        )
+        .fetch_all(&self.pool)
+        .await
+    }
+
+    pub async fn upsert_policy(
+        &self,
+        req: &crate::sla::models::CreatePolicyRequest,
+    ) -> sqlx::Result<crate::sla::models::SlaPolicy> {
+        sqlx::query_as!(
+            crate::sla::models::SlaPolicy,
+            r#"INSERT INTO sla_policies (corridor_id, metric, threshold_ms)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (corridor_id, metric) DO UPDATE SET
+                 threshold_ms = EXCLUDED.threshold_ms,
+                 updated_at   = NOW()
+               RETURNING *"#,
+            req.corridor_id,
+            req.metric,
+            req.threshold_ms,
+        )
+        .fetch_one(&self.pool)
+        .await
+    }
+
+    // ── Issue #464: Breach Events ─────────────────────────────────────────────
+
+    pub async fn insert_breach_event(
+        &self,
+        policy_id: uuid::Uuid,
+        corridor_id: &str,
+        observed_ms: f64,
+        threshold_ms: f64,
+    ) -> sqlx::Result<uuid::Uuid> {
+        use sqlx::types::BigDecimal;
+        use std::str::FromStr;
+        let obs = BigDecimal::from_str(&observed_ms.to_string()).unwrap_or_default();
+        let thr = BigDecimal::from_str(&threshold_ms.to_string()).unwrap_or_default();
+        let row = sqlx::query!(
+            r#"INSERT INTO sla_breach_events (policy_id, corridor_id, observed_ms, threshold_ms)
+               VALUES ($1, $2, $3, $4) RETURNING id"#,
+            policy_id,
+            corridor_id,
+            obs,
+            thr,
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row.id)
+    }
+
+    pub async fn list_breach_events(
+        &self,
+        limit: i64,
+    ) -> sqlx::Result<Vec<crate::sla::models::SlaBreachEvent>> {
+        sqlx::query_as!(
+            crate::sla::models::SlaBreachEvent,
+            "SELECT * FROM sla_breach_events ORDER BY created_at DESC LIMIT $1",
+            limit
+        )
+        .fetch_all(&self.pool)
+        .await
+    }
+
+    pub async fn resolve_breach_event(
+        &self,
+        id: uuid::Uuid,
+        root_cause: &str,
+        actor: &str,
+    ) -> sqlx::Result<()> {
+        // Breach events are immutable — create an audit override entry instead
+        sqlx::query!(
+            r#"INSERT INTO sla_breach_audit_overrides (breach_event_id, root_cause, actor)
+               VALUES ($1, $2, $3)"#,
+            id,
+            root_cause,
+            actor,
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn list_partner_webhook_endpoints(
+        &self,
+        corridor_id: &str,
+    ) -> sqlx::Result<Vec<String>> {
+        let rows = sqlx::query!(
+            "SELECT url FROM sla_partner_webhooks WHERE corridor_id = $1 AND enabled = TRUE",
+            corridor_id
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(|r| r.url).collect())
+    }

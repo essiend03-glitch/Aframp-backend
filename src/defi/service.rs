@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::HashMap; 
 use std::sync::Arc;
 use chrono::Utc;
 use sqlx::types::BigDecimal;
@@ -14,6 +14,10 @@ use super::{
     CreateStrategyRequest, CreateSavingsAccountRequest, DepositRequest, WithdrawalRequest as WithdrawalReq,
     StrategyResponse, SavingsAccountResponse, DeFiOverviewResponse,
 };
+
+use std::collections::BinaryHeap;
+use std::cmp::Ordering;
+use chrono::DateTime;
 
 /// Main DeFi service orchestrating all DeFi operations
 pub struct DeFiService {
@@ -833,7 +837,7 @@ impl DeFiService {
         Ok(BigDecimal::from(0))
     }
 
-    fn is_early_withdrawal(&self, _account: &CngnSavingsAccount, _product: &CngnSavingsProduct) -> bool {
+    fn is_early_withdrawal(&self, _account: &CngnSavingsAccount, _product: &CngnSavingsProduct) -> bool { 
         // Implementation would check if withdrawal is before lock-up period
         false
     }
@@ -877,7 +881,7 @@ impl DeFiService {
 
         let mut summaries = Vec::new();
         
-        for strategy in strategies {
+        for strategy in strategies { 
             let summary = super::StrategyPerformanceSummary {
                 strategy_id: strategy.strategy_id,
                 strategy_name: strategy.strategy_name,
@@ -917,7 +921,7 @@ impl DeFiService {
 
         let mut summaries = Vec::new();
         
-        for product in products {
+        for product in products { 
             let summary = super::SavingsProductPerformanceSummary {
                 product_id: product.product_id,
                 product_name: product.product_name,
@@ -963,5 +967,517 @@ impl ProtocolRegistry {
 impl Default for ProtocolRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+pub struct LiquidityVenue {
+    pub venue_id: Uuid,
+    pub name: String,
+    pub connection_status: String,
+    pub api_credentials: serde_json::Value,
+    pub target_currencies: Vec<String>,
+    pub daily_volume_limit: BigDecimal,
+    pub execution_fee_bps: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+pub struct SmartOrderExecution {
+    pub execution_id: Uuid,
+    pub primary_transaction_id: Uuid,
+    pub venue_id: Uuid,
+    pub child_order_id: Uuid,
+    pub amount: BigDecimal,
+    pub currency: String,
+    pub slippage_bps: i32,
+    pub status: String,
+    pub execution_time_ms: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+pub struct TreasuryRebalancingRule {
+    pub rule_id: Uuid,
+    pub currency: String,
+    pub target_percentage: BigDecimal,
+    pub min_threshold_percentage: BigDecimal,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VenueRate {
+    pub venue_id: Uuid,
+    pub rate: f64,
+    pub fee_bps: i32,
+    pub depth: f64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PathStep {
+    pub venue_id: Uuid,
+    pub from_currency: String,
+    pub to_currency: String,
+    pub rate: f64,
+    pub fee_bps: i32,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RoutingPath {
+    pub steps: Vec<PathStep>,
+    pub total_fee_bps: i32,
+    pub effective_rate: f64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ChildOrder {
+    pub venue_id: Uuid,
+    pub amount: BigDecimal,
+    pub expected_output: BigDecimal,
+    pub slippage_bps: i32,
+}
+
+#[derive(Copy, Clone, PartialEq)]
+struct State {
+    amount: f64,
+    node: usize,
+}
+
+impl Eq for State {}
+
+impl Ord for State {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.amount.partial_cmp(&other.amount).unwrap_or(Ordering::Equal)
+    }
+}
+
+impl PartialOrd for State {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+pub struct SorEngine {
+    db_pool: Arc<DbPool>,
+}
+
+impl SorEngine {
+    pub fn new(db_pool: Arc<DbPool>) -> Self {
+        Self { db_pool }
+    }
+
+    pub fn calculate_optimal_path(
+        from_currency: &str,
+        to_currency: &str,
+        amount: f64,
+        venue_rates: &HashMap<(String, String), Vec<VenueRate>>,
+    ) -> Result<RoutingPath, AppError> {
+        let mut currency_to_id = HashMap::new();
+        let mut id_to_currency = Vec::new();
+
+        let mut get_id = |currency: &str| -> usize {
+            if let Some(&id) = currency_to_id.get(currency) {
+                id
+            } else {
+                let id = id_to_currency.len();
+                currency_to_id.insert(currency.to_string(), id);
+                id_to_currency.push(currency.to_string());
+                id
+            }
+        };
+
+        let start_id = get_id(from_currency);
+        let target_id = get_id(to_currency);
+
+        let mut max_amount = vec![0.0; 1000];
+        let mut parent = vec![None; 1000];
+        let mut parent_edge = vec![None; 1000];
+
+        let mut heap = BinaryHeap::new();
+
+        max_amount[start_id] = amount;
+        heap.push(State { amount, node: start_id });
+
+        while let Some(State { amount: current_amount, node }) = heap.pop() {
+            if node == target_id {
+                break;
+            } 
+
+            if current_amount < max_amount[node] {
+                continue;
+            } 
+
+            let current_currency = &id_to_currency[node];
+
+            for ((from, to), rates) in venue_rates {
+                if from == current_currency {
+                    let next_id = get_id(to);
+                    for rate_info in rates {
+                        let fee_factor = 1.0 - (rate_info.fee_bps as f64 / 10000.0);
+                        let next_amount = current_amount * rate_info.rate * fee_factor;
+
+                        if next_amount > max_amount[next_id] && rate_info.depth >= current_amount {
+                            max_amount[next_id] = next_amount;
+                            parent[next_id] = Some(node);
+                            parent_edge[next_id] = Some(rate_info.clone());
+                            heap.push(State { amount: next_amount, node: next_id });
+                        }
+                    }
+                }
+            }
+        }
+
+        if max_amount[target_id] == 0.0 {
+            return Err(AppError::BadRequest(format!("No path found from {} to {}", from_currency, to_currency)));
+        }
+
+        let mut steps = Vec::new();
+        let mut curr = target_id;
+        while let Some(p) = parent[curr] {
+            let edge = parent_edge[curr].as_ref().unwrap();
+            steps.push(PathStep {
+                venue_id: edge.venue_id,
+                from_currency: id_to_currency[p].clone(),
+                to_currency: id_to_currency[curr].clone(),
+                rate: edge.rate,
+                fee_bps: edge.fee_bps,
+            });
+            curr = p;
+        }
+        steps.reverse();
+
+        let effective_rate = max_amount[target_id] / amount;
+        let total_fee_bps = steps.iter().map(|s| s.fee_bps).sum();
+
+        Ok(RoutingPath {
+            steps,
+            total_fee_bps,
+            effective_rate,
+        })
+    }
+
+    pub fn calculate_order_split(
+        amount: BigDecimal,
+        from_currency: &str,
+        to_currency: &str,
+        venue_rates: &HashMap<(String, String), Vec<VenueRate>>,
+    ) -> Result<Vec<ChildOrder>, AppError> {
+        let key = (from_currency.to_string(), to_currency.to_string());
+        let rates = match venue_rates.get(&key) {
+            Some(r) => r,
+            None => return Err(AppError::BadRequest(format!("No direct venues found for {} -> {}", from_currency, to_currency))),
+        };
+
+        if rates.is_empty() {
+            return Err(AppError::BadRequest(format!("No direct venues found for {} -> {}", from_currency, to_currency)));
+        }
+
+        let mut sorted_rates = rates.clone();
+        sorted_rates.sort_by(|a, b| b.rate.partial_cmp(&a.rate).unwrap_or(Ordering::Equal));
+
+        let amount_f64: f64 = amount.to_string().parse().unwrap_or(0.0);
+        let mut child_orders = Vec::new();
+
+        let splits = match sorted_rates.len() {
+            1 => vec![1.0],
+            2 => vec![0.5, 0.5],
+            _ => vec![0.4, 0.4, 0.2],
+        };
+
+        let mut remaining_amount = amount.clone();
+
+        for (i, rate_info) in sorted_rates.iter().take(splits.len()).enumerate() {
+            let split_pct = splits[i];
+            let split_amount_f64 = amount_f64 * split_pct;
+            let split_amount = if i == splits.len() - 1 || i == sorted_rates.len() - 1 {
+                remaining_amount.clone()
+            } else {
+                let split_val = (amount_f64 * split_pct * 10_000_000.0).round() / 10_000_000.0;
+                let split_bd: BigDecimal = split_val.to_string().parse().unwrap_or_else(|_| remaining_amount.clone());
+                if split_bd > remaining_amount {
+                    remaining_amount.clone()
+                } else {
+                    split_bd
+                }
+            };
+
+            remaining_amount = &remaining_amount - &split_amount;
+
+            let expected_output_f64 = split_amount_f64 * rate_info.rate * (1.0 - rate_info.fee_bps as f64 / 10000.0);
+            let expected_output: BigDecimal = format!("{:.7}", expected_output_f64).parse().unwrap_or_default();
+
+            let slippage_bps = if rate_info.depth > 0.0 {
+                ((split_amount_f64 / rate_info.depth) * 100.0) as i32
+            } else {
+                0
+            };
+
+            child_orders.push(ChildOrder {
+                venue_id: rate_info.venue_id,
+                amount: split_amount,
+                expected_output,
+                slippage_bps,
+            });
+        }
+
+        Ok(child_orders)
+    }
+
+    pub async fn execute_and_track_orders(
+        &self,
+        primary_transaction_id: Uuid,
+        child_orders: Vec<ChildOrder>,
+        currency: &str,
+    ) -> Result<(), AppError> {
+        use tokio::time::{timeout, Duration};
+        use tracing::{info, error, warn};
+
+        let mut handles = Vec::new();
+
+        for order in child_orders {
+            let db_pool = self.db_pool.clone();
+            let currency = currency.to_string();
+            let handle = tokio::spawn(async move {
+                let start_time = Utc::now();
+                let execution_id = Uuid::new_v4();
+                let child_order_id = Uuid::new_v4();
+
+                let insert_res = sqlx::query!(
+                    r#"
+                    INSERT INTO smart_order_executions (
+                        execution_id, primary_transaction_id, venue_id, child_order_id,
+                        amount, currency, slippage_bps, status, execution_time_ms
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    "#,
+                    execution_id,
+                    primary_transaction_id,
+                    order.venue_id,
+                    child_order_id,
+                    order.amount,
+                    currency,
+                    order.slippage_bps,
+                    "pending",
+                    0
+                )
+                .execute(&*db_pool)
+                .await;
+
+                if let Err(e) = insert_res {
+                    error!("Failed to insert execution record: {:?}", e);
+                    return Err(AppError::DatabaseError(e.to_string()));
+                }
+
+                let execution_fut = async {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                    Ok::<(), AppError>(())
+                };
+
+                match timeout(Duration::from_millis(100), execution_fut).await {
+                    Ok(Ok(())) => {
+                        let duration = Utc::now().signed_duration_since(start_time).num_milliseconds() as i32;
+                        sqlx::query!(
+                            r#"
+                            UPDATE smart_order_executions
+                            SET status = 'completed', execution_time_ms = $1, updated_at = NOW()
+                            WHERE execution_id = $2
+                            "#,
+                            duration,
+                            execution_id
+                        )
+                        .execute(&*db_pool)
+                        .await?;
+
+                        metrics::counter!("liquidity_venue_fill_rate", 1);
+                        Ok(())
+                    }
+                    _ => {
+                        sqlx::query!(
+                            r#"
+                            UPDATE smart_order_executions
+                            SET status = 'failed', updated_at = NOW()
+                            WHERE execution_id = $1
+                            "#,
+                            execution_id
+                        )
+                        .execute(&*db_pool)
+                        .await?;
+
+                        metrics::counter!("liquidity_venue_fill_rate", 1);
+                        Err(AppError::BadRequest(format!("Execution timed out on venue {}", order.venue_id)))
+                    }
+                }
+            });
+            handles.push(handle);
+        }
+
+        let mut success = true;
+        for handle in handles {
+            match handle.await {
+                Ok(Ok(())) => {},
+                _ => {
+                    success = false;
+                }
+            }
+        }
+
+        if !success {
+            warn!("One or more child orders failed. Initiating rollback/alternative routing for transaction {}", primary_transaction_id);
+            return Err(AppError::BadRequest("Smart order execution failed on one or more venues".to_string()));
+        }
+
+        Ok(())
+    }
+}
+
+pub struct RebalanceWorker {
+    db_pool: Arc<DbPool>,
+    redis_client: Option<redis::Client>,
+}
+
+impl RebalanceWorker {
+    pub fn new(db_pool: Arc<DbPool>, redis_url: Option<&str>) -> Self {
+        let redis_client = redis_url.and_then(|url| redis::Client::open(url).ok());
+        Self { db_pool, redis_client }
+    }
+
+    pub async fn start(self: Arc<Self>) {
+        info!("Starting Treasury Rebalancing Worker...");
+        let worker = self.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Err(e) = worker.run_rebalance_cycle().await {
+                    error!("P1 ALERT: Automated rebalancing operation failed: {:?}", e);
+                }
+                tokio::time::sleep(Duration::from_secs(60)).await;
+            }
+        });
+    }
+
+    async fn acquire_lock(&self, currency: &str) -> Result<bool, AppError> {
+        if let Some(ref client) = self.redis_client {
+            let mut conn = match client.get_async_connection().await {
+                Ok(c) => c,
+                Err(e) => return Err(AppError::DatabaseError(e.to_string())),
+            };
+            let lock_key = format!("lock:rebalance:{}", currency);
+            let acquired: bool = redis::cmd("SET")
+                .arg(&lock_key)
+                .arg("locked")
+                .arg("NX")
+                .arg("PX")
+                .arg(30000)
+                .query_async(&mut conn)
+                .await
+                .unwrap_or(false);
+            Ok(acquired)
+        } else {
+            Ok(true)
+        }
+    }
+
+    async fn release_lock(&self, currency: &str) -> Result<(), AppError> {
+        if let Some(ref client) = self.redis_client {
+            let mut conn = match client.get_async_connection().await {
+                Ok(c) => c,
+                Err(e) => return Err(AppError::DatabaseError(e.to_string())),
+            };
+            let lock_key = format!("lock:rebalance:{}", currency);
+            let _: () = redis::cmd("DEL")
+                .arg(&lock_key)
+                .query_async(&mut conn)
+                .await
+                .unwrap_or(());
+        }
+        Ok(())
+    }
+
+    pub async fn run_rebalance_cycle(&self) -> Result<(), AppError> {
+        let rules = sqlx::query!(
+            r#"
+            SELECT rule_id, currency, target_percentage, min_threshold_percentage
+            FROM treasury_rebalancing_rules
+            "#
+        )
+        .fetch_all(&*self.db_pool)
+        .await?;
+
+        let total_treasury_value = BigDecimal::from(1000000);
+
+        for rule in rules {
+            let currency = rule.currency;
+            
+            if !self.acquire_lock(&currency).await? {
+                info!("Rebalance lock for {} is already held, skipping.", currency);
+                continue;
+            }
+
+            let result = self.check_and_rebalance_currency(
+                &currency,
+                rule.target_percentage,
+                rule.min_threshold_percentage,
+                &total_treasury_value,
+            ).await;
+
+            let _ = self.release_lock(&currency).await;
+
+            if let Err(e) = result {
+                error!("P1 ALERT: Rebalancing failed for {}: {:?}", currency, e);
+                return Err(e);
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn check_and_rebalance_currency(
+        &self,
+        currency: &str,
+        target_pct: BigDecimal,
+        min_threshold_pct: BigDecimal,
+        total_value: &BigDecimal,
+    ) -> Result<(), AppError> {
+        let current_pct = if currency == "NGN" {
+            BigDecimal::from(10)
+        } else {
+            BigDecimal::from(20)
+        };
+
+        if current_pct < min_threshold_pct {
+            info!("Currency {} is below minimum threshold ({}% < {}%). Triggering rebalance.", currency, current_pct, min_threshold_pct);
+
+            let target_amount = total_value * &target_pct / BigDecimal::from(100);
+            let current_amount = total_value * &current_pct / BigDecimal::from(100);
+            let replenish_amount = &target_amount - &current_amount;
+
+            if self.can_resolve_on_chain(currency) {
+                self.execute_stellar_path_payment(currency, &replenish_amount).await?;
+            } else {
+                self.execute_treasury_transfer(currency, &replenish_amount).await?;
+            }
+
+            let amount_f64: f64 = replenish_amount.to_string().parse().unwrap_or(0.0);
+            metrics::counter!("automated_rebalance_volume_total", amount_f64 as u64);
+        }
+
+        Ok(())
+    }
+
+    fn can_resolve_on_chain(&self, currency: &str) -> bool {
+        currency == "USDC" || currency == "XLM"
+    }
+
+    async fn execute_stellar_path_payment(&self, currency: &str, amount: &BigDecimal) -> Result<(), AppError> {
+        info!("Executing Stellar Path Payment for {} of amount {}", currency, amount);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        Ok(())
+    }
+
+    async fn execute_treasury_transfer(&self, currency: &str, amount: &BigDecimal) -> Result<(), AppError> {
+        info!("Executing Treasury Transfer for {} of amount {}", currency, amount);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        Ok(())
     }
 }

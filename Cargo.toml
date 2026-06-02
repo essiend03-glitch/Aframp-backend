@@ -135,6 +135,7 @@ urlencoding = { version = "2.1", optional = true }
 # Prometheus metrics
 prometheus = { version = "0.13", features = ["process"], optional = true }
 lazy_static = "1.4"
+rayon = "1.10"
 
 # PDF & Reporting
 typst = "0.11"
@@ -201,6 +202,9 @@ opentelemetry-http = { version = "0.11", optional = true }
 tracing-opentelemetry = { version = "0.23", optional = true }
 once_cell = "1.21.4"
 
+# Issue #530 – DRR scheduler lock-free queues
+crossbeam-channel = "0.5"
+
 # ---------------------------------------------------------------------------
 # Binaries
 # ---------------------------------------------------------------------------
@@ -265,6 +269,11 @@ required-features = ["database"]
 [[test]]
 name = "hmac_signing_test"
 path = "tests/hmac_signing_test.rs"
+required-features = ["database"]
+
+[[test]]
+name = "stellar_ecosystem_integration"
+path = "tests/stellar_ecosystem_integration.rs"
 required-features = ["database"]
 
 [[test]]
@@ -398,6 +407,11 @@ name = "audit_ledger_integration"
 path = "tests/audit_ledger_integration.rs"
 required-features = ["database"]
 
+# Issue #475 — Partner Compliance & Due Diligence
+[[test]]
+name = "partner_compliance_integration"
+path = "tests/partner_compliance_integration.rs"
+
 [[test]]
 name = "rate_limit_test"
 path = "tests/rate_limit_test.rs"
@@ -416,4 +430,24 @@ required-features = ["database"]
 [[test]]
 name = "signature_verification_test"
 path = "tests/signature_verification_test.rs"
+required-features = ["database"]
+
+[[test]]
+name = "rate_engine_tests"
+path = "tests/rate_engine_tests.rs"
+required-features = ["cache"]
+
+[[test]]
+name = "liquidity_ml_tests"
+path = "tests/liquidity_ml_tests.rs"
+required-features = ["database"]
+
+[[test]]
+name = "multichain_tests"
+path = "tests/multichain_tests.rs"
+required-features = ["database"]
+
+[[test]]
+name = "bft_oracle_tests"
+path = "tests/bft_oracle_tests.rs"
 required-features = ["database"]

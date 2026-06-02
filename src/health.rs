@@ -91,6 +91,8 @@ pub struct HealthChecker {
     stellar_client: Option<StellarClient>,
     /// Readiness gate: unhealthy until cache warming completes.
     pub warming_state: Option<WarmingState>,
+    /// Optional replication monitor for circuit-breaker-aware lag checks.
+    pub replication_monitor: Option<crate::database::replication_monitor::ReplicationMonitor>,
 }
 
 impl HealthChecker {
@@ -104,12 +106,22 @@ impl HealthChecker {
             cache,
             stellar_client,
             warming_state: None,
+            replication_monitor: None,
         }
     }
 
     /// Attach a warming state so the readiness probe blocks until warming is done.
     pub fn with_warming_state(mut self, state: WarmingState) -> Self {
         self.warming_state = Some(state);
+        self
+    }
+
+    /// Attach a replication monitor for circuit-breaker-aware lag checks.
+    pub fn with_replication_monitor(
+        mut self,
+        monitor: crate::database::replication_monitor::ReplicationMonitor,
+    ) -> Self {
+        self.replication_monitor = Some(monitor);
         self
     }
 
@@ -397,7 +409,43 @@ pub async fn edge_health_handler(
         );
     }
 
-    // Check replication lag if a primary pool is available.
+    // Use the ReplicationMonitor if available; fall back to a direct query.
+    if let Some(monitor) = &checker.replication_monitor {
+        let lag_secs = monitor.lag_secs();
+        let breaker_open = monitor.is_open();
+
+        // Update circuit-breaker metric on every health probe.
+        crate::database::metrics::set_circuit_breaker(
+            &crate::gateway::region::current_region(),
+            breaker_open,
+        );
+
+        if lag_secs > REPLICATION_LAG_THRESHOLD_SECS || breaker_open {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                axum::Json(json!({
+                    "status": "unhealthy",
+                    "region": region,
+                    "reason": "replication_lag",
+                    "lag_secs": lag_secs,
+                    "threshold_secs": REPLICATION_LAG_THRESHOLD_SECS,
+                    "circuit_breaker_open": breaker_open
+                })),
+            );
+        }
+
+        return (
+            StatusCode::OK,
+            axum::Json(json!({
+                "status": "healthy",
+                "region": region,
+                "replication_lag_secs": lag_secs,
+                "circuit_breaker_open": breaker_open
+            })),
+        );
+    }
+
+    // Fallback: direct pg_stat_replication query.
     if let Some(pool) = &checker.db_pool {
         match check_replication_lag(pool).await {
             Ok(Some(lag)) if lag > REPLICATION_LAG_THRESHOLD_SECS => {

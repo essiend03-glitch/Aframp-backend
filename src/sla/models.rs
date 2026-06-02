@@ -74,6 +74,37 @@ pub struct SlaComplianceReport {
     pub generated_at: DateTime<Utc>,
 }
 
+// ── SLA Policy (Issue #464) ───────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct SlaPolicy {
+    pub id: Uuid,
+    pub corridor_id: String,
+    pub metric: String,       // "p95" | "p99"
+    pub threshold_ms: i32,    // breach threshold in milliseconds
+    pub enabled: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct SlaBreachEvent {
+    pub id: Uuid,
+    pub policy_id: Uuid,
+    pub corridor_id: String,
+    pub observed_ms: BigDecimal,
+    pub threshold_ms: BigDecimal,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct PartnerWebhookEndpoint {
+    pub id: Uuid,
+    pub corridor_id: String,
+    pub url: String,
+    pub enabled: bool,
+}
+
 // ── Request / Response DTOs ───────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -102,4 +133,26 @@ pub struct SlaComplianceDashboard {
     pub recent_breaches_30d: i64,
     pub mttr_seconds_30d: Option<f64>,
     pub availability_pct_30d: Option<f64>,
+}
+
+// ── Issue #464 DTOs ───────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct CreatePolicyRequest {
+    pub corridor_id: String,
+    pub metric: String,
+    pub threshold_ms: i32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResolveBreachRequest {
+    pub root_cause: String,
+    pub actor: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SlaStatusDashboard {
+    pub policies: Vec<SlaPolicy>,
+    pub recent_breaches: Vec<SlaBreachEvent>,
+    pub compliance_ratio_pct: f64,
 }

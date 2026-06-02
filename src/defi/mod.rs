@@ -7,6 +7,7 @@
 
 pub mod adapters;
 pub mod amm;
+pub mod analytics;
 pub mod evaluation;
 pub mod governance;
 pub mod handlers;

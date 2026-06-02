@@ -2,7 +2,10 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::error::PartnerError;
-use super::models::{ApiVersionDeprecation, Partner, PartnerCredential};
+use super::models::{
+    ApiVersionDeprecation, Partner, PartnerApiCredential, PartnerCredential, PartnerEntity,
+    PartnerProfile,
+};
 
 #[derive(Clone)]
 pub struct PartnerRepository {
@@ -256,5 +259,220 @@ impl PartnerRepository {
         )
         .fetch_all(&self.pool)
         .await
+    }
+}
+
+// ── Issue #466: partners / partner_profiles / partner_api_credentials ─────────
+
+impl PartnerRepository {
+    // ── partners ──────────────────────────────────────────────────────────────
+
+    pub async fn create_partner_entity(
+        &self,
+        p: &PartnerEntity,
+    ) -> Result<PartnerEntity, PartnerError> {
+        Ok(sqlx::query_as!(
+            PartnerEntity,
+            r#"INSERT INTO partners
+               (id, legal_name, trading_name, organisation_type, registration_number,
+                jurisdiction, onboarding_state, compliance_tier, tenant_id, created_at, updated_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+               RETURNING *"#,
+            p.id,
+            p.legal_name,
+            p.trading_name,
+            p.organisation_type,
+            p.registration_number,
+            p.jurisdiction,
+            p.onboarding_state,
+            p.compliance_tier,
+            p.tenant_id,
+            p.created_at,
+            p.updated_at
+        )
+        .fetch_one(&self.pool)
+        .await?)
+    }
+
+    pub async fn find_partner_entity_by_id(
+        &self,
+        id: Uuid,
+    ) -> Result<PartnerEntity, PartnerError> {
+        sqlx::query_as!(PartnerEntity, "SELECT * FROM partners WHERE id = $1", id)
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or(PartnerError::NotFound)
+    }
+
+    pub async fn update_onboarding_state(
+        &self,
+        id: Uuid,
+        state: &str,
+    ) -> Result<(), PartnerError> {
+        sqlx::query!(
+            "UPDATE partners SET onboarding_state = $1, updated_at = now() WHERE id = $2",
+            state,
+            id
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn list_partners_by_state(
+        &self,
+        state: &str,
+    ) -> Result<Vec<PartnerEntity>, PartnerError> {
+        Ok(sqlx::query_as!(
+            PartnerEntity,
+            "SELECT * FROM partners WHERE onboarding_state = $1 ORDER BY created_at DESC",
+            state
+        )
+        .fetch_all(&self.pool)
+        .await?)
+    }
+
+    // ── partner_profiles ──────────────────────────────────────────────────────
+
+    pub async fn upsert_partner_profile(
+        &self,
+        p: &PartnerProfile,
+    ) -> Result<PartnerProfile, PartnerError> {
+        Ok(sqlx::query_as!(
+            PartnerProfile,
+            r#"INSERT INTO partner_profiles
+               (partner_id, primary_contact_name, primary_contact_email, primary_contact_phone,
+                technical_contact_email, compliance_contact_email, website_url, support_url,
+                logo_url, regulatory_licence_ref, regulated_by, notes, updated_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now())
+               ON CONFLICT (partner_id) DO UPDATE SET
+                   primary_contact_name     = EXCLUDED.primary_contact_name,
+                   primary_contact_email    = EXCLUDED.primary_contact_email,
+                   primary_contact_phone    = EXCLUDED.primary_contact_phone,
+                   technical_contact_email  = EXCLUDED.technical_contact_email,
+                   compliance_contact_email = EXCLUDED.compliance_contact_email,
+                   website_url              = EXCLUDED.website_url,
+                   support_url              = EXCLUDED.support_url,
+                   logo_url                 = EXCLUDED.logo_url,
+                   regulatory_licence_ref   = EXCLUDED.regulatory_licence_ref,
+                   regulated_by             = EXCLUDED.regulated_by,
+                   notes                    = EXCLUDED.notes,
+                   updated_at               = now()
+               RETURNING *"#,
+            p.partner_id,
+            p.primary_contact_name,
+            p.primary_contact_email,
+            p.primary_contact_phone,
+            p.technical_contact_email,
+            p.compliance_contact_email,
+            p.website_url,
+            p.support_url,
+            p.logo_url,
+            p.regulatory_licence_ref,
+            p.regulated_by,
+            p.notes
+        )
+        .fetch_one(&self.pool)
+        .await?)
+    }
+
+    pub async fn find_partner_profile(
+        &self,
+        partner_id: Uuid,
+    ) -> Result<Option<PartnerProfile>, PartnerError> {
+        Ok(sqlx::query_as!(
+            PartnerProfile,
+            "SELECT * FROM partner_profiles WHERE partner_id = $1",
+            partner_id
+        )
+        .fetch_optional(&self.pool)
+        .await?)
+    }
+
+    // ── partner_api_credentials ───────────────────────────────────────────────
+
+    pub async fn create_api_credential(
+        &self,
+        c: &PartnerApiCredential,
+    ) -> Result<PartnerApiCredential, PartnerError> {
+        Ok(sqlx::query_as!(
+            PartnerApiCredential,
+            r#"INSERT INTO partner_api_credentials
+               (id, partner_id, api_key_hash, api_key_salt, api_key_prefix,
+                public_signing_key, signing_algorithm, ip_whitelist, webhook_url,
+                webhook_secret_hash, environment, expires_at, revoked_at, last_used_at, created_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+               RETURNING *"#,
+            c.id,
+            c.partner_id,
+            c.api_key_hash,
+            c.api_key_salt,
+            c.api_key_prefix,
+            c.public_signing_key,
+            c.signing_algorithm,
+            &c.ip_whitelist,
+            c.webhook_url,
+            c.webhook_secret_hash,
+            c.environment,
+            c.expires_at,
+            c.revoked_at,
+            c.last_used_at,
+            c.created_at
+        )
+        .fetch_one(&self.pool)
+        .await?)
+    }
+
+    pub async fn find_api_credential_by_prefix(
+        &self,
+        prefix: &str,
+    ) -> Result<Option<PartnerApiCredential>, PartnerError> {
+        Ok(sqlx::query_as!(
+            PartnerApiCredential,
+            r#"SELECT * FROM partner_api_credentials
+               WHERE api_key_prefix = $1
+                 AND revoked_at IS NULL
+                 AND (expires_at IS NULL OR expires_at > now())"#,
+            prefix
+        )
+        .fetch_optional(&self.pool)
+        .await?)
+    }
+
+    pub async fn revoke_api_credential(&self, id: Uuid) -> Result<(), PartnerError> {
+        sqlx::query!(
+            "UPDATE partner_api_credentials SET revoked_at = now() WHERE id = $1",
+            id
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn touch_api_credential_last_used(&self, id: Uuid) -> Result<(), PartnerError> {
+        sqlx::query!(
+            "UPDATE partner_api_credentials SET last_used_at = now() WHERE id = $1",
+            id
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn list_active_api_credentials(
+        &self,
+        partner_id: Uuid,
+    ) -> Result<Vec<PartnerApiCredential>, PartnerError> {
+        Ok(sqlx::query_as!(
+            PartnerApiCredential,
+            r#"SELECT * FROM partner_api_credentials
+               WHERE partner_id = $1
+                 AND revoked_at IS NULL
+                 AND (expires_at IS NULL OR expires_at > now())
+               ORDER BY created_at DESC"#,
+            partner_id
+        )
+        .fetch_all(&self.pool)
+        .await?)
     }
 }
