@@ -149,6 +149,11 @@ pub mod gateway;
 #[cfg(feature = "database")]
 pub mod vault;
 
+// High-throughput Stellar transaction submission engine
+// Multi-channel account pooling, dynamic fee management, sequence coordination
+#[cfg(feature = "database")]
+pub mod stellar;
+
 // Treasury Emergency Intervention Framework — one-click peg stabilisation
 #[cfg(feature = "database")]
 pub mod treasury;
