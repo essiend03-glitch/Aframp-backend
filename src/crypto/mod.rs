@@ -24,6 +24,7 @@
 
 pub mod envelope;
 pub mod keys;
+pub mod hybrid_signer;
 pub mod metrics;
 pub mod middleware;
 
