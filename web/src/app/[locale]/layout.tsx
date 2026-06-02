@@ -3,6 +3,9 @@ import { getMessages } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { SUPPORTED_LOCALES, LOCALE_CONFIGS } from '@/config/locales';
 import { SupportedLocale } from '@/types/locale';
+import { QueryProvider } from '@/lib/query-client';
+import { AuthProvider } from '@/lib/auth/auth-context';
+import { SessionTimeoutWarning } from '@/components/auth/SessionTimeoutWarning';
 
 export function generateStaticParams() {
   return SUPPORTED_LOCALES.map((locale) => ({ locale }));
@@ -26,9 +29,14 @@ export default async function LocaleLayout({
   return (
     <html lang={locale} dir={config.direction}>
       <body>
-        <NextIntlClientProvider messages={messages}>
-          {children}
-        </NextIntlClientProvider>
+        <QueryProvider>
+          <AuthProvider>
+            <NextIntlClientProvider messages={messages}>
+              {children}
+              <SessionTimeoutWarning />
+            </NextIntlClientProvider>
+          </AuthProvider>
+        </QueryProvider>
       </body>
     </html>
   );
