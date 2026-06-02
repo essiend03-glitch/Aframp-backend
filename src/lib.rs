@@ -270,6 +270,22 @@ pub mod event_bus;
 #[cfg(feature = "database")]
 pub mod travel_rule;
 
+// Issue #530 — Multi-Tenant Resource Isolation, Rate Limiting & Fair-Share Scheduling Engine
+#[cfg(feature = "database")]
+pub mod rate_engine;
+
+// Issue #531 — Real-Time Predictive Liquidity Modeling & ML Core
+#[cfg(feature = "database")]
+pub mod liquidity_ml;
+
+// Issue #532 — Multi-Chain Settlement Interoperability & Cross-EVM Bridges
+#[cfg(feature = "database")]
+pub mod multichain;
+
+// Issue #533 — Decentralized Oracles, BFT Price Feeds & MEV Protection Core
+#[cfg(feature = "database")]
+pub mod bft_oracle;
+
 // Contract error enum for Soroban (only when not using database feature)
 #[cfg(not(feature = "database"))]
 #[contracterror]
