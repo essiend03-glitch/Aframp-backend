@@ -47,14 +47,14 @@ CREATE TABLE IF NOT EXISTS scope_approvals (
 );
 
 -- Indexes for efficient queries
-CREATE INDEX idx_oauth_scopes_category ON oauth_scopes(category);
-CREATE INDEX idx_oauth_scopes_is_sensitive ON oauth_scopes(is_sensitive);
-CREATE INDEX idx_scope_approvals_status ON scope_approvals(status);
-CREATE INDEX idx_scope_approvals_client_id ON scope_approvals(client_id);
-CREATE INDEX idx_scope_approvals_scope_name ON scope_approvals(scope_name);
-CREATE INDEX idx_scope_approvals_requested_at ON scope_approvals(requested_at DESC);
-CREATE INDEX idx_scope_approvals_client_scope ON scope_approvals(client_id, scope_name);
-CREATE UNIQUE INDEX idx_scope_approvals_unique_pending
+CREATE INDEX IF NOT EXISTS idx_oauth_scopes_category ON oauth_scopes(category);
+CREATE INDEX IF NOT EXISTS idx_oauth_scopes_is_sensitive ON oauth_scopes(is_sensitive);
+CREATE INDEX IF NOT EXISTS idx_scope_approvals_status ON scope_approvals(status);
+CREATE INDEX IF NOT EXISTS idx_scope_approvals_client_id ON scope_approvals(client_id);
+CREATE INDEX IF NOT EXISTS idx_scope_approvals_scope_name ON scope_approvals(scope_name);
+CREATE INDEX IF NOT EXISTS idx_scope_approvals_requested_at ON scope_approvals(requested_at DESC);
+CREATE INDEX IF NOT EXISTS idx_scope_approvals_client_scope ON scope_approvals(client_id, scope_name);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_scope_approvals_unique_pending
     ON scope_approvals(client_id, scope_name)
     WHERE status = 'pending';
 

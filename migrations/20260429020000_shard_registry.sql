@@ -20,10 +20,10 @@ CREATE TABLE shard_registry (
 COMMENT ON TABLE shard_registry IS
     'Registry of all database shards. Read by ShardRouter on startup and on SIGHUP.';
 
--- Seed with a single shard pointing at the primary DB (DATABASE_URL).
--- Add rows here to introduce new shards; the router hot-reloads on change.
+-- Seed with a single shard pointing at the primary DB.
+-- Uses coalesce so it works even when app.primary_dsn is not set.
 INSERT INTO shard_registry (shard_id, dsn, status)
-VALUES (0, current_setting('app.primary_dsn', true), 'active')
+VALUES (0, coalesce(current_setting('app.primary_dsn', true), 'postgres:///aframp_dev'), 'active')
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
