@@ -2,7 +2,7 @@
 -- Corporate banking partners, virtual accounts, and settlement tracking
 
 -- Bank Integrations: Track active corporate banking partners
-CREATE TABLE bank_integrations (
+CREATE TABLE IF NOT EXISTS bank_integrations (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     partner_name            TEXT NOT NULL UNIQUE,
     partner_code            TEXT NOT NULL UNIQUE,
@@ -25,11 +25,11 @@ CREATE TABLE bank_integrations (
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_bank_integrations_status ON bank_integrations (status);
-CREATE INDEX idx_bank_integrations_code ON bank_integrations (partner_code);
+CREATE INDEX IF NOT EXISTS idx_bank_integrations_status ON bank_integrations (status);
+CREATE INDEX IF NOT EXISTS idx_bank_integrations_code ON bank_integrations (partner_code);
 
 -- Virtual Accounts: Track generated dedicated inbound payment accounts
-CREATE TABLE virtual_accounts (
+CREATE TABLE IF NOT EXISTS virtual_accounts (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id                 UUID NOT NULL REFERENCES kyc_records(id),
     bank_integration_id     UUID REFERENCES bank_integrations(id),
@@ -50,13 +50,13 @@ CREATE TABLE virtual_accounts (
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_virtual_accounts_user ON virtual_accounts (user_id);
-CREATE INDEX idx_virtual_accounts_number ON virtual_accounts (virtual_account_number);
-CREATE INDEX idx_virtual_accounts_state ON virtual_accounts (assignment_state);
-CREATE INDEX idx_virtual_accounts_tracking ON virtual_accounts (settlement_tracking_code);
+CREATE INDEX IF NOT EXISTS idx_virtual_accounts_user ON virtual_accounts (user_id);
+CREATE INDEX IF NOT EXISTS idx_virtual_accounts_number ON virtual_accounts (virtual_account_number);
+CREATE INDEX IF NOT EXISTS idx_virtual_accounts_state ON virtual_accounts (assignment_state);
+CREATE INDEX IF NOT EXISTS idx_virtual_accounts_tracking ON virtual_accounts (settlement_tracking_code);
 
 -- Fiat Settlements: Track fiat deposits and cNGN minting
-CREATE TABLE fiat_settlements (
+CREATE TABLE IF NOT EXISTS fiat_settlements (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     virtual_account_id      UUID REFERENCES virtual_accounts(id),
     user_id                 UUID NOT NULL REFERENCES kyc_records(id),
@@ -78,13 +78,13 @@ CREATE TABLE fiat_settlements (
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_fiat_settlements_user ON fiat_settlements (user_id);
-CREATE INDEX idx_fiat_settlements_virtual ON fiat_settlements (virtual_account_id);
-CREATE INDEX idx_fiat_settlements_status ON fiat_settlements (settlement_status);
-CREATE INDEX idx_fiat_settlements_bank_txn ON fiat_settlements (bank_transaction_id);
+CREATE INDEX IF NOT EXISTS idx_fiat_settlements_user ON fiat_settlements (user_id);
+CREATE INDEX IF NOT EXISTS idx_fiat_settlements_virtual ON fiat_settlements (virtual_account_id);
+CREATE INDEX IF NOT EXISTS idx_fiat_settlements_status ON fiat_settlements (settlement_status);
+CREATE INDEX IF NOT EXISTS idx_fiat_settlements_bank_txn ON fiat_settlements (bank_transaction_id);
 
 -- Bank Webhooks: Enhanced webhook tracking with signature validation
-CREATE TABLE bank_webhooks (
+CREATE TABLE IF NOT EXISTS bank_webhooks (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     bank_integration_id     UUID REFERENCES bank_integrations(id),
     event_type              TEXT NOT NULL,
@@ -100,12 +100,12 @@ CREATE TABLE bank_webhooks (
     created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_bank_webhooks_integration ON bank_webhooks (bank_integration_id, created_at DESC);
-CREATE INDEX idx_bank_webhooks_idempotency ON bank_webhooks (idempotency_key);
-CREATE INDEX idx_bank_webhooks_provider_id ON bank_webhooks (provider_event_id, bank_integration_id);
+CREATE INDEX IF NOT EXISTS idx_bank_webhooks_integration ON bank_webhooks (bank_integration_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bank_webhooks_idempotency ON bank_webhooks (idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_bank_webhooks_provider_id ON bank_webhooks (provider_event_id, bank_integration_id);
 
 -- Bank API Metrics: Track API latency and performance
-CREATE TABLE bank_api_metrics (
+CREATE TABLE IF NOT EXISTS bank_api_metrics (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     bank_integration_id     UUID REFERENCES bank_integrations(id),
     api_endpoint            TEXT NOT NULL,
@@ -117,11 +117,11 @@ CREATE TABLE bank_api_metrics (
     created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_bank_api_metrics_integration ON bank_api_metrics (bank_integration_id, created_at DESC);
-CREATE INDEX idx_bank_api_metrics_latency ON bank_api_metrics (api_endpoint, latency_ms);
+CREATE INDEX IF NOT EXISTS idx_bank_api_metrics_integration ON bank_api_metrics (bank_integration_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bank_api_metrics_latency ON bank_api_metrics (api_endpoint, latency_ms);
 
 -- Reconciliation Jobs: Track manual reconciliation triggers
-CREATE TABLE bank_reconciliation_jobs (
+CREATE TABLE IF NOT EXISTS bank_reconciliation_jobs (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     bank_integration_id     UUID REFERENCES bank_integrations(id),
     trigger_type            TEXT NOT NULL, -- 'scheduled', 'manual', 'automatic'
@@ -135,8 +135,8 @@ CREATE TABLE bank_reconciliation_jobs (
     metadata                JSONB DEFAULT '{}'
 );
 
-CREATE INDEX idx_reconciliation_jobs_status ON bank_reconciliation_jobs (status);
-CREATE INDEX idx_reconciliation_jobs_integration ON bank_reconciliation_jobs (bank_integration_id);
+CREATE INDEX IF NOT EXISTS idx_reconciliation_jobs_status ON bank_reconciliation_jobs (status);
+CREATE INDEX IF NOT EXISTS idx_reconciliation_jobs_integration ON bank_reconciliation_jobs (bank_integration_id);
 
 -- Add columns to existing linked_bank_accounts if needed
 ALTER TABLE linked_bank_accounts 

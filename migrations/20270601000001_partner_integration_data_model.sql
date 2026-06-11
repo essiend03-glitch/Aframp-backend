@@ -29,9 +29,20 @@ CREATE TABLE IF NOT EXISTS partners (
 );
 
 COMMENT ON TABLE partners IS 'Core partner registry for the Partner Integration Framework (Issue #466)';
-COMMENT ON COLUMN partners.onboarding_state IS 'sandbox → testing → verified → production lifecycle';
-COMMENT ON COLUMN partners.compliance_tier IS 'standard | enhanced | premium — governs AML/KYB scrutiny';
-COMMENT ON COLUMN partners.tenant_id IS 'Immutable tenant isolation key for multi-tenant data segregation';
+
+-- Add new columns to existing partners table if missing
+ALTER TABLE partners
+    ADD COLUMN IF NOT EXISTS legal_name          TEXT,
+    ADD COLUMN IF NOT EXISTS trading_name        TEXT,
+    ADD COLUMN IF NOT EXISTS organisation_type   TEXT,
+    ADD COLUMN IF NOT EXISTS registration_number TEXT,
+    ADD COLUMN IF NOT EXISTS jurisdiction        TEXT,
+    ADD COLUMN IF NOT EXISTS onboarding_state    TEXT NOT NULL DEFAULT 'sandbox',
+    ADD COLUMN IF NOT EXISTS compliance_tier     TEXT NOT NULL DEFAULT 'standard',
+    ADD COLUMN IF NOT EXISTS tenant_id           UUID NOT NULL DEFAULT gen_random_uuid();
+DO $$ BEGIN COMMENT ON COLUMN partners.onboarding_state IS 'sandbox → testing → verified → production lifecycle'; EXCEPTION WHEN undefined_column OR undefined_table THEN NULL; END $$;
+DO $$ BEGIN COMMENT ON COLUMN partners.compliance_tier IS 'standard | enhanced | premium — governs AML/KYB scrutiny'; EXCEPTION WHEN undefined_column OR undefined_table THEN NULL; END $$;
+DO $$ BEGIN COMMENT ON COLUMN partners.tenant_id IS 'Immutable tenant isolation key for multi-tenant data segregation'; EXCEPTION WHEN undefined_column OR undefined_table THEN NULL; END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uidx_partners_registration
     ON partners(registration_number, jurisdiction);
@@ -63,7 +74,7 @@ CREATE TABLE IF NOT EXISTS partner_profiles (
 );
 
 COMMENT ON TABLE partner_profiles IS 'Extended business and contact details for each partner';
-COMMENT ON COLUMN partner_profiles.compliance_contact_email IS 'Dedicated compliance officer contact for AML/KYB escalations';
+DO $$ BEGIN COMMENT ON COLUMN partner_profiles.compliance_contact_email IS 'Dedicated compliance officer contact for AML/KYB escalations'; EXCEPTION WHEN undefined_column OR undefined_table THEN NULL; END $$;
 
 -- ── Partner API credentials ───────────────────────────────────────────────────
 
@@ -93,11 +104,11 @@ CREATE TABLE IF NOT EXISTS partner_api_credentials (
 );
 
 COMMENT ON TABLE partner_api_credentials IS 'Secure API credentials with salted hashes, asymmetric keys, IP whitelists, and webhook config';
-COMMENT ON COLUMN partner_api_credentials.api_key_hash IS 'Argon2id hash of the full API key — raw key returned once at issuance';
-COMMENT ON COLUMN partner_api_credentials.api_key_salt IS 'Per-credential random salt used in the Argon2id hash';
-COMMENT ON COLUMN partner_api_credentials.public_signing_key IS 'PEM-encoded public key for verifying partner-signed request payloads';
-COMMENT ON COLUMN partner_api_credentials.ip_whitelist IS 'CIDR/IP list; empty array means no IP restriction (sandbox only)';
-COMMENT ON COLUMN partner_api_credentials.webhook_secret_hash IS 'SHA-256 of the HMAC secret used to sign outbound webhook payloads';
+DO $$ BEGIN COMMENT ON COLUMN partner_api_credentials.api_key_hash IS 'Argon2id hash of the full API key — raw key returned once at issuance'; EXCEPTION WHEN undefined_column OR undefined_table THEN NULL; END $$;
+DO $$ BEGIN COMMENT ON COLUMN partner_api_credentials.api_key_salt IS 'Per-credential random salt used in the Argon2id hash'; EXCEPTION WHEN undefined_column OR undefined_table THEN NULL; END $$;
+DO $$ BEGIN COMMENT ON COLUMN partner_api_credentials.public_signing_key IS 'PEM-encoded public key for verifying partner-signed request payloads'; EXCEPTION WHEN undefined_column OR undefined_table THEN NULL; END $$;
+DO $$ BEGIN COMMENT ON COLUMN partner_api_credentials.ip_whitelist IS 'CIDR/IP list - empty array means no IP restriction (sandbox only)'; EXCEPTION WHEN undefined_column OR undefined_table THEN NULL; END $$;
+DO $$ BEGIN COMMENT ON COLUMN partner_api_credentials.webhook_secret_hash IS 'SHA-256 of the HMAC secret used to sign outbound webhook payloads'; EXCEPTION WHEN undefined_column OR undefined_table THEN NULL; END $$;
 
 CREATE INDEX IF NOT EXISTS idx_partner_api_creds_partner_id
     ON partner_api_credentials(partner_id);
@@ -105,19 +116,21 @@ CREATE INDEX IF NOT EXISTS idx_partner_api_creds_prefix
     ON partner_api_credentials(api_key_prefix);
 CREATE INDEX IF NOT EXISTS idx_partner_api_creds_active
     ON partner_api_credentials(partner_id)
-    WHERE revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now());
+    WHERE revoked_at IS NULL;
 
 -- ── updated_at triggers ───────────────────────────────────────────────────────
 
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'partners_updated_at') THEN
-        CREATE TRIGGER partners_updated_at
+        DROP TRIGGER IF EXISTS partners_updated_at ON partners;
+CREATE TRIGGER partners_updated_at
             BEFORE UPDATE ON partners
             FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'partner_profiles_updated_at') THEN
-        CREATE TRIGGER partner_profiles_updated_at
+        DROP TRIGGER IF EXISTS partner_profiles_updated_at ON partner_profiles;
+CREATE TRIGGER partner_profiles_updated_at
             BEFORE UPDATE ON partner_profiles
             FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
     END IF;
