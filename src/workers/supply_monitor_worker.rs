@@ -1,4 +1,4 @@
-use crate::chains::stellar::client::StellarClient;
+// REMOVED: use crate::chains::stellar::client::StellarClient;
 use crate::services::notification::{NotificationService, NotificationType};
 use sqlx::{types::BigDecimal, PgPool};
 use std::str::FromStr;

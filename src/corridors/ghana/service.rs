@@ -1,6 +1,6 @@
 //! Ghana corridor service — orchestrates the full NG→GH transfer flow.
 
-use crate::compliance_registry::repository::ComplianceRegistryRepository;
+// REMOVED: use crate::compliance_registry::repository::ComplianceRegistryRepository;
 use crate::corridors::ghana::models::*;
 use crate::payments::provider::PaymentProvider;
 use crate::payments::providers::ghana::{

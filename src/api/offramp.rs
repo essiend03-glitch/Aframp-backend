@@ -526,7 +526,7 @@ pub async fn initiate_withdrawal(
     //     conversion) and high-risk corridor. pending_travel_rule on the exchange
     //     record is the operator-visible hold indicator.
     if let Some(tr_svc) = &state.travel_rule_service {
-        use crate::travel_rule::models::{
+// REMOVED:         use crate::travel_rule::models::{
             InitiateTravelRuleRequest, Ivms101NaturalPerson, Ivms101Person,
         };
         use rust_decimal::Decimal;

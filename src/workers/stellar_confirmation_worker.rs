@@ -4,7 +4,7 @@
 //! transitions state to `completed` or `failed`, fires webhook events on every
 //! transition, detects stale transactions, and exposes Prometheus metrics.
 
-use crate::chains::stellar::client::StellarClient;
+// REMOVED: use crate::chains::stellar::client::StellarClient;
 use crate::database::webhook_repository::WebhookRepository;
 use prometheus::{register_counter_vec, register_gauge, CounterVec, Gauge, Registry};
 use serde_json::{json, Value as JsonValue};

@@ -1,9 +1,9 @@
 use crate::cache::cache::Cache;
 use crate::cache::keys::onramp::QuoteKey;
 use crate::cache::RedisCache;
-use crate::chains::stellar::client::StellarClient;
-use crate::chains::stellar::trustline::CngnTrustlineManager;
-use crate::chains::stellar::types::is_valid_stellar_address;
+// REMOVED: use crate::chains::stellar::client::StellarClient;
+// REMOVED: use crate::chains::stellar::trustline::CngnTrustlineManager;
+// REMOVED: use crate::chains::stellar::types::is_valid_stellar_address;
 use crate::database::repository::Repository;
 use crate::database::transaction_repository::TransactionRepository;
 use crate::error::{

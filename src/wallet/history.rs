@@ -1,4 +1,4 @@
-use crate::chains::stellar::client::StellarClient;
+// REMOVED: use crate::chains::stellar::client::StellarClient;
 use crate::wallet::repository::{InsertHistoryEntry, TransactionHistoryRepository};
 use anyhow::Result;
 use sqlx::types::BigDecimal;

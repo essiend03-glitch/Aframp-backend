@@ -280,7 +280,7 @@ pub async fn initiate_transfer(
         Ok(t) => {
             // Travel Rule gate — applies to cross-border transfers and high-risk corridors
             if let Some(tr_svc) = &state.travel_rule_service {
-                use crate::travel_rule::models::{
+// REMOVED:                 use crate::travel_rule::models::{
                     InitiateTravelRuleRequest, Ivms101NaturalPerson, Ivms101Person,
                 };
                 use rust_decimal::Decimal;

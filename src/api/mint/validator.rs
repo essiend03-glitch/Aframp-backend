@@ -9,8 +9,8 @@
 ///   6. Destination has an active cNGN trustline on Stellar
 ///   7. Destination address is not blacklisted (wallet status check)
 use crate::api::mint::repository::MintRepository;
-use crate::chains::stellar::trustline::CngnTrustlineManager;
-use crate::chains::stellar::types::is_valid_stellar_address;
+// REMOVED: use crate::chains::stellar::trustline::CngnTrustlineManager;
+// REMOVED: use crate::chains::stellar::types::is_valid_stellar_address;
 use crate::error::{AppError, AppErrorKind, DomainError, ValidationError};
 use rust_decimal::Decimal;
 use sqlx::PgPool;

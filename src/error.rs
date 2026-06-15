@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[cfg(feature = "database")]
-use crate::chains::stellar::errors::StellarError;
+// REMOVED: use crate::chains::stellar::errors::StellarError;
 
 /// CNGN-specific error codes for programmatic handling
 #[cfg(feature = "database")]
@@ -534,7 +534,7 @@ impl std::error::Error for AppError {}
 #[cfg(feature = "database")]
 impl From<StellarError> for AppError {
     fn from(err: StellarError) -> Self {
-        use crate::chains::stellar::errors::StellarError as SE;
+// REMOVED:         use crate::chains::stellar::errors::StellarError as SE;
 
         let kind = match err {
             SE::AccountNotFound { address } => AppErrorKind::Domain(DomainError::WalletNotFound {

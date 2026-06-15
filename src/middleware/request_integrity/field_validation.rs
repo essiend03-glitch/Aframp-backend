@@ -7,7 +7,7 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::cache::cache::Cache;
-use crate::chains::stellar::types::is_valid_stellar_address;
+// REMOVED: use crate::chains::stellar::types::is_valid_stellar_address;
 use crate::database::provider_config_repository::ProviderConfigRepository;
 use crate::services::onramp_quote::StoredQuote;
 

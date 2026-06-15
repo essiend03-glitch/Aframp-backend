@@ -1,6 +1,6 @@
 use crate::cache::cache::Cache;
 use crate::cache::RedisCache;
-use crate::chains::stellar::client::StellarClient;
+// REMOVED: use crate::chains::stellar::client::StellarClient;
 use crate::database::repository::Repository;
 use crate::database::transaction_repository::TransactionRepository;
 use crate::error::{AppError, AppErrorKind, DomainError, ValidationError};

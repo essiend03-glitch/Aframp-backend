@@ -1,6 +1,6 @@
 //! Kenya corridor service — orchestrates the full NG→KE transfer flow.
 
-use crate::compliance_registry::repository::ComplianceRegistryRepository;
+// REMOVED: use crate::compliance_registry::repository::ComplianceRegistryRepository;
 use crate::corridors::kenya::models::*;
 use crate::payments::provider::PaymentProvider;
 use crate::payments::providers::mpesa_kenya::{

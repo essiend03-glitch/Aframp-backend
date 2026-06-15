@@ -1,9 +1,9 @@
 use super::models::*;
 use crate::cache::cache::Cache;
 use crate::cache::keys::onramp::QuoteKey;
-use crate::chains::stellar::client::StellarClient;
-use crate::chains::stellar::trustline::CngnTrustlineManager;
-use crate::chains::stellar::types::is_valid_stellar_address;
+// REMOVED: use crate::chains::stellar::client::StellarClient;
+// REMOVED: use crate::chains::stellar::trustline::CngnTrustlineManager;
+// REMOVED: use crate::chains::stellar::types::is_valid_stellar_address;
 use crate::error::{AppError, AppErrorKind, ValidationError};
 use crate::services::exchange_rate::{ConversionDirection, ConversionRequest, ExchangeRateService};
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};

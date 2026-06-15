@@ -1,7 +1,7 @@
 //! cNGN payment transaction builder
 //! Builds payment transaction drafts, calculates fees, supports memo, and signs payloads.
 
-use crate::chains::stellar::client::StellarClient;
+// REMOVED: use crate::chains::stellar::client::StellarClient;
 use crate::error::{AppError, AppErrorKind, ExternalError, ValidationError};
 use ed25519_dalek::{Signer, SigningKey};
 use serde::{Deserialize, Serialize};

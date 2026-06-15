@@ -9,7 +9,7 @@ use tracing::{error, info};
 
 use crate::cache::warmer::WarmingState;
 use crate::cache::RedisCache;
-use crate::chains::stellar::client::StellarClient;
+// REMOVED: use crate::chains::stellar::client::StellarClient;
 
 /// Health status response
 #[derive(Debug, Serialize, Clone)]

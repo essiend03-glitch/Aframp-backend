@@ -1,5 +1,5 @@
-use crate::chains::stellar::client::StellarClient;
-use crate::chains::stellar::payment::{CngnMemo, CngnPaymentBuilder};
+// REMOVED: use crate::chains::stellar::client::StellarClient;
+// REMOVED: use crate::chains::stellar::payment::{CngnMemo, CngnPaymentBuilder};
 use crate::database::transaction_repository::TransactionRepository;
 use crate::services::mint_queue::{MintQueueService, MintRequest};
 use bigdecimal::BigDecimal;

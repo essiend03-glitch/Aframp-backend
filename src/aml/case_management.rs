@@ -6,7 +6,7 @@
 use super::models::{AmlCaseStatus, AmlFlag, AmlFlagLevel, AmlScreeningResult};
 use super::repository::AmlRepository;
 use crate::services::notification::NotificationService;
-use crate::sar::SarService;
+// REMOVED: use crate::sar::SarService;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;

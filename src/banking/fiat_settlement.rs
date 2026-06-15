@@ -2,7 +2,7 @@
 //! Automatically mints or transfers equivalent cNGN upon verified bank deposit
 
 use crate::banking::integrations::{FiatSettlement, SettlementStatus};
-use crate::chains::ChainService;
+// REMOVED: use crate::chains::ChainService;
 use crate::wallet::WalletService;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};

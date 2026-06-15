@@ -2,9 +2,9 @@
 //! Monitors Stellar blockchain for incoming payments to merchant addresses
 //! Matches payments to payment intents via memo field
 
-use crate::chains::stellar::client::StellarClient;
-use crate::merchant_gateway::repository::PaymentIntentRepository;
-use crate::merchant_gateway::service::MerchantGatewayService;
+// REMOVED: use crate::chains::stellar::client::StellarClient;
+// REMOVED: use crate::merchant_gateway::repository::PaymentIntentRepository;
+// REMOVED: use crate::merchant_gateway::service::MerchantGatewayService;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use std::collections::HashSet;

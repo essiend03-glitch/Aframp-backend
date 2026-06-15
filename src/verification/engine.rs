@@ -2,7 +2,7 @@
 ///
 /// Compares on-chain cNGN supply (Stellar) against off-chain fiat reserves (bank accounts).
 /// Generates HMAC-signed PoR snapshots and alerts on under-collateralisation.
-use crate::chains::stellar::client::StellarClient;
+// REMOVED: use crate::chains::stellar::client::StellarClient;
 use crate::verification::repository::VerificationRepository;
 use chrono::Utc;
 use hmac::{Hmac, Mac};

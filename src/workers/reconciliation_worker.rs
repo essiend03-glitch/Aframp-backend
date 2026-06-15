@@ -24,7 +24,7 @@ use tokio::time::interval;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::chains::stellar::client::StellarClient;
+// REMOVED: use crate::chains::stellar::client::StellarClient;
 
 // ── Configuration ─────────────────────────────────────────────────────────────
 

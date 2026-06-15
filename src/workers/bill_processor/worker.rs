@@ -1,4 +1,4 @@
-use crate::chains::stellar::client::StellarClient;
+// REMOVED: use crate::chains::stellar::client::StellarClient;
 use crate::database::bill_payment_repository::{BillPayment, BillPaymentRepository};
 use crate::database::repository::Repository;
 use crate::database::transaction_repository::TransactionRepository;

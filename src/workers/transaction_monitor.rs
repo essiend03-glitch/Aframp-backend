@@ -1,4 +1,4 @@
-use crate::chains::stellar::client::{HorizonTransactionRecord, StellarClient};
+// REMOVED: use crate::chains::stellar::client::{HorizonTransactionRecord, StellarClient};
 use crate::database::repository::Repository;
 use crate::database::transaction_repository::TransactionRepository;
 use crate::database::webhook_repository::WebhookRepository;

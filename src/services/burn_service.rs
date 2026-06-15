@@ -1,10 +1,10 @@
-use crate::chains::stellar::burn_transaction_builder::{
+// REMOVED: use crate::chains::stellar::burn_transaction_builder::{
     BatchBurnOperation, BurnOperation, BurnTransactionDraft, CngnBurnTransactionBuilder,
     SignedBurnTransaction,
 };
-use crate::chains::stellar::client::StellarClient;
-use crate::chains::stellar::errors::StellarError;
-use crate::chains::stellar::trustline::CngnAssetConfig;
+// REMOVED: use crate::chains::stellar::client::StellarClient;
+// REMOVED: use crate::chains::stellar::errors::StellarError;
+// REMOVED: use crate::chains::stellar::trustline::CngnAssetConfig;
 use crate::database::models::redemption::{BurnTransaction, RedemptionRequest};
 use crate::database::repositories::redemption_repository::RedemptionRepository;
 use async_trait::async_trait;

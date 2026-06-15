@@ -1,5 +1,5 @@
 use super::types::ProcessingError;
-use crate::chains::stellar::client::StellarClient;
+// REMOVED: use crate::chains::stellar::client::StellarClient;
 use tracing::{debug, info};
 use uuid::Uuid;
 

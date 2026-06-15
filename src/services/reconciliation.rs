@@ -1,4 +1,4 @@
-use crate::chains::stellar::client::StellarClient;
+// REMOVED: use crate::chains::stellar::client::StellarClient;
 use crate::database::reconciliation_repository::{ReconciliationReport, ReconciliationRepository};
 use crate::payments::factory::PaymentProviderFactory;
 use crate::payments::types::ProviderName;

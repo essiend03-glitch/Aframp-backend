@@ -55,7 +55,7 @@ pub async fn get_balance(
 }
 
 fn handle_error(error: crate::chains::stellar::errors::StellarError, address: &str) -> Response {
-    use crate::chains::stellar::errors::StellarError;
+// REMOVED:     use crate::chains::stellar::errors::StellarError;
 
     match error {
         StellarError::InvalidAddress { .. } => (

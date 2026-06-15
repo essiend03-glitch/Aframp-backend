@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{error, info};
 
-use crate::service_auth::{
+// REMOVED: use crate::service_auth::{
     AllowlistEntry, ServiceAllowlist, ServiceAllowlistRepository, ServiceIdentityInfo,
     ServiceRegistration, ServiceRegistry,
 };

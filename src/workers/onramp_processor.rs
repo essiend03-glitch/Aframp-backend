@@ -15,10 +15,10 @@
 //! optimistic locking (WHERE status = '<expected>').
 
 use crate::audit::mint_log::MintAuditStore;
-use crate::chains::stellar::client::StellarClient;
-use crate::chains::stellar::errors::StellarError;
-use crate::chains::stellar::payment::{CngnMemo, CngnPaymentBuilder};
-use crate::chains::stellar::trustline::CngnTrustlineManager;
+// REMOVED: use crate::chains::stellar::client::StellarClient;
+// REMOVED: use crate::chains::stellar::errors::StellarError;
+// REMOVED: use crate::chains::stellar::payment::{CngnMemo, CngnPaymentBuilder};
+// REMOVED: use crate::chains::stellar::trustline::CngnTrustlineManager;
 use crate::database::transaction_repository::{Transaction, TransactionRepository};
 use crate::payments::factory::PaymentProviderFactory;
 use crate::payments::types::{PaymentState, ProviderName, StatusRequest};

@@ -1,75 +1,75 @@
-mod adaptive_rate_limit;
+// REMOVED: mod adaptive_rate_limit;
 mod api;
 mod api_keys;
 mod analytics;
 mod audit;
-mod auditor_portal;
+// REMOVED: mod auditor_portal;
 mod auth;
 mod verification;
 mod cache;
-mod chains;
-mod compliance_registry;
+// REMOVED: mod chains;
+// REMOVED: mod compliance_registry;
 mod corridors;
 mod config;
 mod config_validation;
 mod database;
-mod ddos;
-mod developer_portal;
-mod distributed_api;
+// REMOVED: mod ddos;
+// REMOVED: mod developer_portal;
+// REMOVED: mod distributed_api;
 mod error;
 mod health;
-mod liquidity;
+// REMOVED: mod liquidity;
 mod logging;
-mod lp_onboarding;
-mod lp_payout;
+// REMOVED: mod lp_onboarding;
+// REMOVED: mod lp_payout;
 mod metrics;
-mod multisig;
-mod peg_monitor;
-mod pep;
+// REMOVED: mod multisig;
+// REMOVED: mod peg_monitor;
+// REMOVED: mod pep;
 mod middleware;
-mod mtls;
+// REMOVED: mod mtls;
 mod oauth;
 mod payments;
-mod bug_bounty;
-mod pentest;
-mod pos;
+// REMOVED: mod bug_bounty;
+// REMOVED: mod pentest;
+// REMOVED: mod pos;
 mod recurring;
-mod security_compliance;
+// REMOVED: mod security_compliance;
 mod services;
 mod telemetry;
 mod wallet;
 mod workers;
 // Issue #334 — Merchant CRM & Customer Insights
-mod merchant_crm;
+// REMOVED: mod merchant_crm;
 // Issue #333 — Merchant Invoicing & Automated Tax Calculation
-mod merchant_invoicing;
+// REMOVED: mod merchant_invoicing;
 // Issue #336 — Merchant Multi-Sig & Treasury Controls
-mod merchant_multisig;
+// REMOVED: mod merchant_multisig;
 // Issue #335 — Multi-Store & Franchise Management
-mod franchise;
+// REMOVED: mod franchise;
 // Issue #322 — Wallet Creation & Stellar Account Provisioning
 mod wallet_provisioning;
 mod oracle;
-mod agent_cfo;
-mod agent_swarm;
-mod agent_dashboard;
+// REMOVED: mod agent_cfo;
+// REMOVED: mod agent_swarm;
+// REMOVED: mod agent_dashboard;
 
 // Issue #337 — Merchant Dispute Resolution & Clawback Management
-mod dispute;
+// REMOVED: mod dispute;
 
 // DeFi Integration Architecture & Protocol Selection (Issue #370)
-mod defi;
+// REMOVED: mod defi;
 
 // Issue #407 — Banking Partner Integration & Account Linkage
 mod banking;
 
 // Issue #499 — CBDC Interoperability & Sandbox Integration
-mod cbdc;
+// REMOVED: mod cbdc;
 
-mod capacity;
+// REMOVED: mod capacity;
 
 // Regulatory Examination Support & Evidence Package
-mod regulatory_evidence;
+// REMOVED: mod regulatory_evidence;
 
 // Imports
 use std::sync::Arc;
@@ -86,8 +86,8 @@ use axum::{
 };
 use cache::{init_cache_pool, build_multi_level_cache, CacheConfig, RedisCache};
 use cache::warmer::{warm_caches, WarmingState};
-use chains::stellar::client::StellarClient;
-use chains::stellar::config::StellarConfig;
+// REMOVED: use chains::stellar::client::StellarClient;
+// REMOVED: use chains::stellar::config::StellarConfig;
 use database::{init_pool, PoolConfig};
 use dotenv::dotenv;
 use middleware::logging::{request_logging_middleware, UuidRequestId};
@@ -1435,7 +1435,7 @@ async fn main() -> anyhow::Result<()> {
         if let (Some(ref pool), Some(ref redis)) = (&db_pool, &redis_cache) {
             use crate::aml::screening::{AmlProviderConfig, SanctionsScreeningService};
             use crate::aml::case_management::AmlCaseManager;
-            use crate::travel_rule::{TravelRuleRepository, TravelRuleService};
+// REMOVED:             use crate::travel_rule::{TravelRuleRepository, TravelRuleService};
 
             let tr_repo = std::sync::Arc::new(TravelRuleRepository::new(pool.clone()));
             let aml_cfg = AmlProviderConfig::default();
@@ -2118,7 +2118,7 @@ async fn main() -> anyhow::Result<()> {
 
     // ── Travel Rule API routes — reuse the already-initialised shared service ──
     let travel_rule_routes = if let (Some(ref pool), Some(_redis)) = (&db_pool, &redis_cache) {
-        use crate::travel_rule::{TravelRuleRepository, TravelRuleState};
+// REMOVED:         use crate::travel_rule::{TravelRuleRepository, TravelRuleState};
 
         // Repository is lightweight — create fresh for the state (shares pool)
         let tr_repo = std::sync::Arc::new(TravelRuleRepository::new(pool.clone()));
