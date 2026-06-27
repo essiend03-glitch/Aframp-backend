@@ -33,13 +33,13 @@ mod revocation_unit_tests {
 
     /// Verifies UUID-to-string conversion used for Redis set members.
     #[test]
-    fn test_uuid_to_redis_member_format() {
-        let id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+    fn test_uuid_to_redis_member_format() -> Result<(), Box<dyn std::error::Error>> {
+        let id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")?;
         let member = id.to_string();
         assert_eq!(member, "550e8400-e29b-41d4-a716-446655440000");
-        // Ensure it round-trips
-        let parsed = Uuid::parse_str(&member).unwrap();
+        let parsed = Uuid::parse_str(&member)?;
         assert_eq!(parsed, id);
+        Ok(())
     }
 
     // ── Revocation type validation ────────────────────────────────────────────
@@ -136,31 +136,34 @@ mod revocation_unit_tests {
     // ── Automated trigger detail serialisation ────────────────────────────────
 
     #[test]
-    fn test_abuse_trigger_detail_serialisation() {
+    fn test_abuse_trigger_detail_serialisation() -> Result<(), Box<dyn std::error::Error>> {
         let detail = serde_json::json!({
             "requests_per_minute": 500,
             "threshold": 100,
             "window_seconds": 60
         });
-        let serialised = serde_json::to_string(&detail).unwrap();
+        let serialised = serde_json::to_string(&detail)?;
         assert!(serialised.contains("requests_per_minute"));
         assert!(serialised.contains("500"));
+        Ok(())
     }
 
     #[test]
-    fn test_suspicious_ip_trigger_detail_serialisation() {
+    fn test_suspicious_ip_trigger_detail_serialisation() -> Result<(), Box<dyn std::error::Error>> {
         let ip = "192.168.1.1";
         let detail = serde_json::json!({ "ip": ip });
-        let serialised = serde_json::to_string(&detail).unwrap();
+        let serialised = serde_json::to_string(&detail)?;
         assert!(serialised.contains(ip));
+        Ok(())
     }
 
     #[test]
-    fn test_inactivity_trigger_detail_serialisation() {
+    fn test_inactivity_trigger_detail_serialisation() -> Result<(), Box<dyn std::error::Error>> {
         let days = 180_i64;
         let detail = serde_json::json!({ "inactivity_days": days });
-        let serialised = serde_json::to_string(&detail).unwrap();
+        let serialised = serde_json::to_string(&detail)?;
         assert!(serialised.contains("180"));
+        Ok(())
     }
 
     // ── Consumer blacklist expiry TTL calculation ─────────────────────────────
@@ -237,15 +240,18 @@ mod revocation_integration_tests {
         REDIS_BLACKLISTED_CONSUMERS_SET, REDIS_REVOKED_KEYS_SET,
     };
     use redis::AsyncCommands;
+    use std::error::Error;
     use std::sync::Arc;
     use std::time::Duration;
     use uuid::Uuid;
 
-    async fn setup() -> (RevocationService, sqlx::PgPool, RedisCache) {
-        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL required for integration tests");
-        let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+    async fn setup() -> Result<(RevocationService, sqlx::PgPool, RedisCache), Box<dyn Error>> {
+        let db_url = std::env::var("DATABASE_URL")
+            .map_err(|e| format!("DATABASE_URL required for integration tests: {e}"))?;
+        let redis_url = std::env::var("REDIS_URL")
+            .unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
 
-        let pool = init_pool(&db_url, None).await.expect("DB pool");
+        let pool = init_pool(&db_url, None).await?;
         let cache_pool = init_cache_pool(CacheConfig {
             redis_url: redis_url.clone(),
             max_connections: 5,
@@ -255,19 +261,18 @@ mod revocation_integration_tests {
             idle_timeout: Duration::from_secs(60),
             health_check_interval: Duration::from_secs(30),
         })
-        .await
-        .expect("Redis pool");
+        .await?;
         let redis = RedisCache::new(cache_pool);
         let svc = RevocationService::new(
             Arc::new(pool.clone()),
             Arc::new(redis.clone()),
             Arc::new(NotificationService::new()),
         );
-        (svc, pool, redis)
+        Ok((svc, pool, redis))
     }
 
     /// Helper: insert a test consumer + api_key, return (consumer_id, key_id).
-    async fn insert_test_key(pool: &sqlx::PgPool) -> (Uuid, Uuid) {
+    async fn insert_test_key(pool: &sqlx::PgPool) -> Result<(Uuid, Uuid), sqlx::Error> {
         let consumer_id: Uuid = sqlx::query_scalar!(
             r#"
             INSERT INTO consumers (name, consumer_type)
@@ -276,8 +281,7 @@ mod revocation_integration_tests {
             "#
         )
         .fetch_one(pool)
-        .await
-        .expect("insert consumer");
+        .await?;
 
         let key_id: Uuid = sqlx::query_scalar!(
             r#"
@@ -288,10 +292,9 @@ mod revocation_integration_tests {
             consumer_id,
         )
         .fetch_one(pool)
-        .await
-        .expect("insert api_key");
+        .await?;
 
-        (consumer_id, key_id)
+        Ok((consumer_id, key_id))
     }
 
     /// Cleanup test data.
@@ -304,48 +307,42 @@ mod revocation_integration_tests {
     // ── Test: immediate revocation pushes to Redis synchronously ─────────────
 
     #[tokio::test]
-    async fn test_revoke_key_pushes_to_redis_synchronously() {
-        let (svc, pool, redis) = setup().await;
-        let (consumer_id, key_id) = insert_test_key(&pool).await;
+    async fn test_revoke_key_pushes_to_redis_synchronously() -> Result<(), Box<dyn Error>> {
+        let (svc, pool, redis) = setup().await?;
+        let (consumer_id, key_id) = insert_test_key(&pool).await?;
 
-        let result = svc
-            .revoke_key(RevokeKeyInput {
-                key_id,
-                consumer_id,
-                revocation_type: "admin_initiated",
-                reason: "integration test".to_string(),
-                revoked_by: "test".to_string(),
-                triggering_detail: None,
-            })
-            .await;
+        svc.revoke_key(RevokeKeyInput {
+            key_id,
+            consumer_id,
+            revocation_type: "admin_initiated",
+            reason: "integration test".to_string(),
+            revoked_by: "test".to_string(),
+            triggering_detail: None,
+        })
+        .await?;
 
-        assert!(result.is_ok(), "Revocation should succeed: {:?}", result);
-
-        // Verify key is in Redis blacklist immediately
         let is_blacklisted = RevocationService::is_key_blacklisted_redis(&redis, key_id).await;
         assert!(is_blacklisted, "Key must be in Redis blacklist after revocation");
 
-        // Verify DB status
         let status: String = sqlx::query_scalar!(
             "SELECT status FROM api_keys WHERE id = $1",
             key_id
         )
         .fetch_one(&pool)
-        .await
-        .expect("fetch key status");
+        .await?;
         assert_eq!(status, "revoked");
 
         cleanup(&pool, consumer_id).await;
+        Ok(())
     }
 
     // ── Test: consumer-level revocation terminates all active keys ────────────
 
     #[tokio::test]
-    async fn test_revoke_all_consumer_keys() {
-        let (svc, pool, redis) = setup().await;
-        let (consumer_id, key_id_1) = insert_test_key(&pool).await;
+    async fn test_revoke_all_consumer_keys() -> Result<(), Box<dyn Error>> {
+        let (svc, pool, redis) = setup().await?;
+        let (consumer_id, key_id_1) = insert_test_key(&pool).await?;
 
-        // Insert a second key for the same consumer
         let key_id_2: Uuid = sqlx::query_scalar!(
             r#"
             INSERT INTO api_keys (consumer_id, key_hash, key_prefix)
@@ -355,31 +352,28 @@ mod revocation_integration_tests {
             consumer_id,
         )
         .fetch_one(&pool)
-        .await
-        .expect("insert second key");
+        .await?;
 
         let records = svc
             .revoke_all_consumer_keys(consumer_id, "bulk test".to_string(), "admin".to_string())
-            .await
-            .expect("revoke all");
+            .await?;
 
         assert_eq!(records.len(), 2, "Both keys must be revoked");
 
-        // Both keys must be in Redis
         assert!(RevocationService::is_key_blacklisted_redis(&redis, key_id_1).await);
         assert!(RevocationService::is_key_blacklisted_redis(&redis, key_id_2).await);
 
         cleanup(&pool, consumer_id).await;
+        Ok(())
     }
 
     // ── Test: Redis restart recovery (bootstrap) ──────────────────────────────
 
     #[tokio::test]
-    async fn test_bootstrap_repopulates_redis_after_restart() {
-        let (svc, pool, redis) = setup().await;
-        let (consumer_id, key_id) = insert_test_key(&pool).await;
+    async fn test_bootstrap_repopulates_redis_after_restart() -> Result<(), Box<dyn Error>> {
+        let (svc, pool, redis) = setup().await?;
+        let (consumer_id, key_id) = insert_test_key(&pool).await?;
 
-        // Revoke the key (pushes to Redis)
         svc.revoke_key(RevokeKeyInput {
             key_id,
             consumer_id,
@@ -388,38 +382,33 @@ mod revocation_integration_tests {
             revoked_by: "test".to_string(),
             triggering_detail: None,
         })
-        .await
-        .expect("revoke");
+        .await?;
 
-        // Simulate Redis restart by clearing the set
-        let mut conn = redis.pool.get().await.expect("redis conn");
-        let _: () = conn.del(REDIS_REVOKED_KEYS_SET).await.expect("del set");
+        let mut conn = redis.pool.get().await?;
+        let _: () = conn.del(REDIS_REVOKED_KEYS_SET).await?;
 
-        // Verify it's gone
         let in_set: bool = conn
             .sismember(REDIS_REVOKED_KEYS_SET, key_id.to_string())
             .await
             .unwrap_or(false);
         assert!(!in_set, "Key should be absent after simulated Redis restart");
 
-        // Bootstrap
-        svc.bootstrap_redis_blacklist().await.expect("bootstrap");
+        svc.bootstrap_redis_blacklist().await?;
 
-        // Verify it's back
         let is_blacklisted = RevocationService::is_key_blacklisted_redis(&redis, key_id).await;
         assert!(is_blacklisted, "Key must be back in Redis after bootstrap");
 
         cleanup(&pool, consumer_id).await;
+        Ok(())
     }
 
     // ── Test: temporary consumer blacklist expiry ─────────────────────────────
 
     #[tokio::test]
-    async fn test_temporary_consumer_blacklist_expiry() {
-        let (svc, pool, redis) = setup().await;
-        let (consumer_id, _key_id) = insert_test_key(&pool).await;
+    async fn test_temporary_consumer_blacklist_expiry() -> Result<(), Box<dyn Error>> {
+        let (svc, pool, redis) = setup().await?;
+        let (consumer_id, _key_id) = insert_test_key(&pool).await?;
 
-        // Blacklist with 2-second expiry
         let expires_at = chrono::Utc::now() + chrono::Duration::seconds(2);
         svc.blacklist_consumer(BlacklistConsumerInput {
             consumer_id,
@@ -427,34 +416,30 @@ mod revocation_integration_tests {
             blacklisted_by: "test".to_string(),
             expires_at: Some(expires_at),
         })
-        .await
-        .expect("blacklist");
+        .await?;
 
-        // Should be blacklisted immediately
         let is_bl = RevocationService::is_consumer_blacklisted_redis(&redis, consumer_id).await;
         assert!(is_bl, "Consumer must be blacklisted immediately");
 
-        // Wait for expiry
         tokio::time::sleep(Duration::from_secs(3)).await;
 
-        // Lift expired entries in DB
-        svc.list_active_blacklist().await.expect("list (triggers expiry cleanup)");
+        svc.list_active_blacklist().await?;
 
-        // Lift from Redis manually (in production this is done by the expiry key TTL)
-        svc.lift_consumer_blacklist(consumer_id).await.expect("lift");
+        svc.lift_consumer_blacklist(consumer_id).await?;
 
         let is_bl_after = RevocationService::is_consumer_blacklisted_redis(&redis, consumer_id).await;
         assert!(!is_bl_after, "Consumer must not be blacklisted after expiry + lift");
 
         cleanup(&pool, consumer_id).await;
+        Ok(())
     }
 
     // ── Test: automated abuse revocation ─────────────────────────────────────
 
     #[tokio::test]
-    async fn test_automated_abuse_revocation() {
-        let (svc, pool, redis) = setup().await;
-        let (consumer_id, key_id) = insert_test_key(&pool).await;
+    async fn test_automated_abuse_revocation() -> Result<(), Box<dyn Error>> {
+        let (svc, pool, redis) = setup().await?;
+        let (consumer_id, key_id) = insert_test_key(&pool).await?;
 
         let detail = serde_json::json!({
             "requests_per_minute": 500,
@@ -463,41 +448,41 @@ mod revocation_integration_tests {
 
         let record = svc
             .revoke_abusive_key(key_id, consumer_id, detail)
-            .await
-            .expect("automated abuse revocation");
+            .await?;
 
         assert_eq!(record.revocation_type, "automated_abuse");
         assert_eq!(record.revoked_by, "system");
         assert!(RevocationService::is_key_blacklisted_redis(&redis, key_id).await);
 
         cleanup(&pool, consumer_id).await;
+        Ok(())
     }
 
     // ── Test: automated suspicious IP revocation ──────────────────────────────
 
     #[tokio::test]
-    async fn test_automated_suspicious_ip_revocation() {
-        let (svc, pool, redis) = setup().await;
-        let (consumer_id, key_id) = insert_test_key(&pool).await;
+    async fn test_automated_suspicious_ip_revocation() -> Result<(), Box<dyn Error>> {
+        let (svc, pool, redis) = setup().await?;
+        let (consumer_id, key_id) = insert_test_key(&pool).await?;
 
         let record = svc
             .revoke_suspicious_ip_key(key_id, consumer_id, "1.2.3.4")
-            .await
-            .expect("suspicious IP revocation");
+            .await?;
 
         assert_eq!(record.revocation_type, "automated_suspicious_ip");
         assert!(record.reason.contains("1.2.3.4"));
         assert!(RevocationService::is_key_blacklisted_redis(&redis, key_id).await);
 
         cleanup(&pool, consumer_id).await;
+        Ok(())
     }
 
     // ── Test: revocation audit list is paginated and filterable ───────────────
 
     #[tokio::test]
-    async fn test_revocation_audit_list_pagination() {
-        let (svc, pool, _redis) = setup().await;
-        let (consumer_id, key_id) = insert_test_key(&pool).await;
+    async fn test_revocation_audit_list_pagination() -> Result<(), Box<dyn Error>> {
+        let (svc, pool, _redis) = setup().await?;
+        let (consumer_id, key_id) = insert_test_key(&pool).await?;
 
         svc.revoke_key(RevokeKeyInput {
             key_id,
@@ -507,8 +492,7 @@ mod revocation_integration_tests {
             revoked_by: "admin".to_string(),
             triggering_detail: None,
         })
-        .await
-        .expect("revoke");
+        .await?;
 
         let (records, total) = svc
             .list_revocations(crate::services::revocation::RevocationListQuery {
@@ -519,22 +503,22 @@ mod revocation_integration_tests {
                 page: 1,
                 page_size: 10,
             })
-            .await
-            .expect("list revocations");
+            .await?;
 
         assert!(total >= 1, "At least one revocation record expected");
         assert!(!records.is_empty());
         assert_eq!(records[0].consumer_id, consumer_id);
 
         cleanup(&pool, consumer_id).await;
+        Ok(())
     }
 
     // ── Test: blacklist state endpoint reflects active entries ────────────────
 
     #[tokio::test]
-    async fn test_blacklist_state_reflects_active_entries() {
-        let (svc, pool, _redis) = setup().await;
-        let (consumer_id, _key_id) = insert_test_key(&pool).await;
+    async fn test_blacklist_state_reflects_active_entries() -> Result<(), Box<dyn Error>> {
+        let (svc, pool, _redis) = setup().await?;
+        let (consumer_id, _key_id) = insert_test_key(&pool).await?;
 
         svc.blacklist_consumer(BlacklistConsumerInput {
             consumer_id,
@@ -542,19 +526,18 @@ mod revocation_integration_tests {
             blacklisted_by: "admin".to_string(),
             expires_at: None,
         })
-        .await
-        .expect("blacklist");
+        .await?;
 
-        let entries = svc.list_active_blacklist().await.expect("list blacklist");
+        let entries = svc.list_active_blacklist().await?;
         let found = entries.iter().any(|e| e.consumer_id == consumer_id);
         assert!(found, "Blacklisted consumer must appear in active blacklist state");
 
-        // Lift and verify removal
-        svc.lift_consumer_blacklist(consumer_id).await.expect("lift");
-        let entries_after = svc.list_active_blacklist().await.expect("list after lift");
+        svc.lift_consumer_blacklist(consumer_id).await?;
+        let entries_after = svc.list_active_blacklist().await?;
         let still_found = entries_after.iter().any(|e| e.consumer_id == consumer_id);
         assert!(!still_found, "Lifted consumer must not appear in active blacklist");
 
         cleanup(&pool, consumer_id).await;
+        Ok(())
     }
 }
