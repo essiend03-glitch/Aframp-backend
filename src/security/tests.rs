@@ -16,16 +16,17 @@ mod tests {
     use tokio::time::{sleep, Duration};
     use uuid::Uuid;
 
-    // Test helper to create a test database pool
-    async fn create_test_pool() -> PgPool {
-        // In a real test environment, this would create a test database
-        // For now, we'll use a placeholder
-        todo!("Implement test database setup")
+    // Test helper to create a test database pool.
+    // Requires TEST_DATABASE_URL to be set; skips (returns Err) if unavailable.
+    async fn create_test_pool() -> Result<PgPool, sqlx::Error> {
+        let url = std::env::var("TEST_DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://localhost/aframp_test".into());
+        PgPool::connect(&url).await
     }
 
     #[tokio::test]
-    async fn test_velocity_limit_detection() {
-        let pool = create_test_pool().await;
+    async fn test_velocity_limit_detection() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = create_test_pool().await?;
         let config = AnomalyDetectionConfig {
             velocity_limit_ngn: 100_000_000, // 100M NGN
             velocity_window: Duration::from_secs(60),
@@ -40,51 +41,48 @@ mod tests {
 
         // Record multiple mints within the window
         anomaly_service
-            .record_mint_event(30_000_000, &wallet)
-            .await
-            .unwrap(); // 30M
+            .record_mint_event(30_000_000, &wallet) // 30M
+            .await?;
         anomaly_service
-            .record_mint_event(40_000_000, &wallet)
-            .await
-            .unwrap(); // 40M
+            .record_mint_event(40_000_000, &wallet) // 40M
+            .await?;
         anomaly_service
-            .record_mint_event(35_000_000, &wallet)
-            .await
-            .unwrap(); // 35M
+            .record_mint_event(35_000_000, &wallet) // 35M
+            .await?;
 
         // Total: 105M NGN > 100M limit, should trigger circuit breaker
         sleep(Duration::from_millis(100)).await; // Allow async processing
 
         let status = anomaly_service.get_system_status().await;
         assert!(!matches!(status, SystemStatus::Operational));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_negative_delta_detection() {
-        let pool = create_test_pool().await;
+    async fn test_negative_delta_detection() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = create_test_pool().await?;
         let config = AnomalyDetectionConfig::default();
         let anomaly_service = Arc::new(AnomalyDetectionService::new(pool, config));
 
         // Simulate bank reserves less than on-chain supply beyond tolerance
         let bank_reserves = 950_000_000; // 950M NGN
         let on_chain_supply = 1_000_000_000; // 1B NGN
-        let delta_percentage = (on_chain_supply - bank_reserves) as f64 / on_chain_supply as f64; // 5%
 
         // 5% > 0.01% tolerance, should trigger circuit breaker
         anomaly_service
             .check_reserve_ratio(bank_reserves, on_chain_supply)
-            .await
-            .unwrap();
+            .await?;
 
         sleep(Duration::from_millis(100)).await;
 
         let status = anomaly_service.get_system_status().await;
         assert!(!matches!(status, SystemStatus::Operational));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_unknown_origin_detection() {
-        let pool = create_test_pool().await;
+    async fn test_unknown_origin_detection() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = create_test_pool().await?;
         let config = AnomalyDetectionConfig::default();
         let anomaly_service = Arc::new(AnomalyDetectionService::new(pool, config));
 
@@ -98,18 +96,18 @@ mod tests {
 
         anomaly_service
             .detect_unknown_origin_mints(unknown_mints)
-            .await
-            .unwrap();
+            .await?;
 
         sleep(Duration::from_millis(100)).await;
 
         let status = anomaly_service.get_system_status().await;
         assert!(!matches!(status, SystemStatus::Operational));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_circuit_breaker_escalation() {
-        let pool = create_test_pool().await;
+    async fn test_circuit_breaker_escalation() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = create_test_pool().await?;
         let config = AnomalyDetectionConfig::default();
         let anomaly_service = Arc::new(AnomalyDetectionService::new(pool, config));
 
@@ -127,8 +125,7 @@ mod tests {
         };
         anomaly_service
             .trigger_circuit_breaker(anomaly1)
-            .await
-            .unwrap();
+            .await?;
 
         let status1 = anomaly_service.get_system_status().await;
         assert!(matches!(status1, SystemStatus::PartialHalt));
@@ -141,16 +138,16 @@ mod tests {
         };
         anomaly_service
             .trigger_circuit_breaker(anomaly2)
-            .await
-            .unwrap();
+            .await?;
 
         let status2 = anomaly_service.get_system_status().await;
         assert!(matches!(status2, SystemStatus::EmergencyStop));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_manual_emergency_stop() {
-        let pool = create_test_pool().await;
+    async fn test_manual_emergency_stop() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = create_test_pool().await?;
         let config = AnomalyDetectionConfig::default();
         let anomaly_service = Arc::new(AnomalyDetectionService::new(pool, config));
 
@@ -159,8 +156,7 @@ mod tests {
 
         anomaly_service
             .manual_emergency_stop(reason, authorized_by)
-            .await
-            .unwrap();
+            .await?;
 
         let status = anomaly_service.get_system_status().await;
         assert!(matches!(status, SystemStatus::EmergencyStop));
@@ -168,36 +164,36 @@ mod tests {
         let circuit_state = anomaly_service.get_circuit_breaker_state().await;
         assert!(circuit_state.audit_required);
         assert!(circuit_state.triggered_at.is_some());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_audit_and_reset() {
-        let pool = create_test_pool().await;
+    async fn test_audit_and_reset() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = create_test_pool().await?;
         let config = AnomalyDetectionConfig::default();
         let anomaly_service = Arc::new(AnomalyDetectionService::new(pool, config));
 
         // First trigger emergency stop
         anomaly_service
             .manual_emergency_stop("Test", "admin1")
-            .await
-            .unwrap();
+            .await?;
 
-        // Should not be able to reset without audit
-        let result = anomaly_service
+        // Should work in test environment
+        anomaly_service
             .audit_and_reset("auditor1", "auditor2", "test reset")
-            .await;
-        assert!(result.is_ok()); // Should work in test environment
+            .await?;
 
         let status = anomaly_service.get_system_status().await;
         assert!(matches!(status, SystemStatus::Operational));
 
         let circuit_state = anomaly_service.get_circuit_breaker_state().await;
         assert!(!circuit_state.audit_required);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_circuit_breaker_middleware() {
-        let pool = create_test_pool().await;
+    async fn test_circuit_breaker_middleware() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = create_test_pool().await?;
         let config = AnomalyDetectionConfig::default();
         let anomaly_service = Arc::new(AnomalyDetectionService::new(pool, config));
         let middleware = CircuitBreakerMiddleware::new(anomaly_service.clone());
@@ -208,8 +204,7 @@ mod tests {
         // Trigger emergency stop
         anomaly_service
             .manual_emergency_stop("Test", "admin")
-            .await
-            .unwrap();
+            .await?;
 
         // Should block operations when halted
         let result = middleware.check_operation_allowed().await;
@@ -219,15 +214,18 @@ mod tests {
             crate::error::AppErrorKind::Domain(crate::error::DomainError::SystemHalted {
                 ..
             }) => {
-                // Expected error type
+                // Expected error type — circuit breaker correctly blocked the operation
             }
-            _ => panic!("Expected SystemHalted error"),
+            other => {
+                return Err(format!("Expected SystemHalted error, got: {:?}", other).into());
+            }
         }
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_velocity_tracking_cleanup() {
-        let pool = create_test_pool().await;
+    async fn test_velocity_tracking_cleanup() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = create_test_pool().await?;
         let config = AnomalyDetectionConfig {
             velocity_limit_ngn: 100_000_000,
             velocity_window: Duration::from_secs(2), // Short window for testing
@@ -239,12 +237,10 @@ mod tests {
         // Record mints that exceed limit
         anomaly_service
             .record_mint_event(60_000_000, &wallet)
-            .await
-            .unwrap();
+            .await?;
         anomaly_service
-            .record_mint_event(60_000_000, &wallet)
-            .await
-            .unwrap(); // Total: 120M
+            .record_mint_event(60_000_000, &wallet) // Total: 120M
+            .await?;
 
         sleep(Duration::from_millis(100)).await;
         assert!(!matches!(
@@ -258,18 +254,18 @@ mod tests {
         // Record new mint (should not trigger as old events expired)
         anomaly_service
             .record_mint_event(30_000_000, &wallet)
-            .await
-            .unwrap();
+            .await?;
         sleep(Duration::from_millis(100)).await;
 
         // System should still be halted (no auto-recovery)
         let status = anomaly_service.get_system_status().await;
         assert!(!matches!(status, SystemStatus::Operational));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_multiple_wallet_velocity_tracking() {
-        let pool = create_test_pool().await;
+    async fn test_multiple_wallet_velocity_tracking() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = create_test_pool().await?;
         let config = AnomalyDetectionConfig::default();
         let anomaly_service = Arc::new(AnomalyDetectionService::new(pool, config));
 
@@ -278,13 +274,11 @@ mod tests {
 
         // Each wallet under limit individually
         anomaly_service
-            .record_mint_event(300_000_000, &wallet1)
-            .await
-            .unwrap(); // 300M
+            .record_mint_event(300_000_000, &wallet1) // 300M
+            .await?;
         anomaly_service
-            .record_mint_event(300_000_000, &wallet2)
-            .await
-            .unwrap(); // 300M
+            .record_mint_event(300_000_000, &wallet2) // 300M
+            .await?;
 
         sleep(Duration::from_millis(100)).await;
 
@@ -296,9 +290,8 @@ mod tests {
 
         // One wallet exceeds limit
         anomaly_service
-            .record_mint_event(300_000_000, &wallet1)
-            .await
-            .unwrap(); // Total: 600M
+            .record_mint_event(300_000_000, &wallet1) // Total: 600M
+            .await?;
 
         sleep(Duration::from_millis(100)).await;
 
@@ -307,11 +300,12 @@ mod tests {
             anomaly_service.get_system_status().await,
             SystemStatus::Operational
         ));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_reserve_ratio_tolerance() {
-        let pool = create_test_pool().await;
+    async fn test_reserve_ratio_tolerance() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = create_test_pool().await?;
         let config = AnomalyDetectionConfig {
             negative_delta_tolerance: 0.01, // 1% tolerance
             ..Default::default()
@@ -324,8 +318,7 @@ mod tests {
 
         anomaly_service
             .check_reserve_ratio(bank_reserves, on_chain_supply)
-            .await
-            .unwrap();
+            .await?;
 
         sleep(Duration::from_millis(100)).await;
 
@@ -340,8 +333,7 @@ mod tests {
 
         anomaly_service
             .check_reserve_ratio(bank_reserves_2, on_chain_supply)
-            .await
-            .unwrap();
+            .await?;
 
         sleep(Duration::from_millis(100)).await;
 
@@ -350,11 +342,12 @@ mod tests {
             anomaly_service.get_system_status().await,
             SystemStatus::Operational
         ));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_circuit_state_persistence() {
-        let pool = create_test_pool().await;
+    async fn test_circuit_state_persistence() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = create_test_pool().await?;
         let config = AnomalyDetectionConfig::default();
 
         // Create two service instances to test persistence
@@ -364,14 +357,14 @@ mod tests {
         // Trigger emergency stop on service1
         service1
             .manual_emergency_stop("Test", "admin")
-            .await
-            .unwrap();
+            .await?;
 
         // Service2 should see the updated state (from database)
         sleep(Duration::from_millis(200)).await;
 
         let status2 = service2.get_system_status().await;
         assert!(matches!(status2, SystemStatus::EmergencyStop));
+        Ok(())
     }
 }
 
@@ -390,9 +383,15 @@ mod api_tests {
     use serde_json::json;
     use tower::ServiceExt;
 
+    async fn create_test_pool() -> Result<sqlx::PgPool, sqlx::Error> {
+        let url = std::env::var("TEST_DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://localhost/aframp_test".into());
+        sqlx::PgPool::connect(&url).await
+    }
+
     #[tokio::test]
-    async fn test_circuit_breaker_status_endpoint() {
-        let pool = create_test_pool().await;
+    async fn test_circuit_breaker_status_endpoint() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = create_test_pool().await?;
         let anomaly_service = Arc::new(AnomalyDetectionService::new(pool, Default::default()));
 
         let app = Router::new().nest(
@@ -403,16 +402,16 @@ mod api_tests {
         // Test status endpoint
         let request = Request::builder()
             .uri("/api/admin/circuit-breaker/status")
-            .body(Body::empty())
-            .unwrap();
+            .body(Body::empty())?;
 
-        let response = app.oneshot(request).await.unwrap();
+        let response = app.oneshot(request).await?;
         assert_eq!(response.status(), StatusCode::OK);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_emergency_stop_endpoint() {
-        let pool = create_test_pool().await;
+    async fn test_emergency_stop_endpoint() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = create_test_pool().await?;
         let anomaly_service = Arc::new(AnomalyDetectionService::new(pool, Default::default()));
 
         let app = Router::new().nest(
@@ -430,18 +429,18 @@ mod api_tests {
             .method("POST")
             .uri("/api/admin/circuit-breaker/emergency-stop")
             .header("Content-Type", "application/json")
-            .body(Body::from(emergency_request.to_string()))
-            .unwrap();
+            .body(Body::from(emergency_request.to_string()))?;
 
-        let response = app.oneshot(request).await.unwrap();
+        let response = app.oneshot(request).await?;
 
         // In development mode without auth codes, this should succeed
         assert_eq!(response.status(), StatusCode::OK);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_dashboard_status_endpoint() {
-        let pool = create_test_pool().await;
+    async fn test_dashboard_status_endpoint() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = create_test_pool().await?;
         let anomaly_service = Arc::new(AnomalyDetectionService::new(pool, Default::default()));
 
         let app = Router::new().nest(
@@ -451,10 +450,10 @@ mod api_tests {
 
         let request = Request::builder()
             .uri("/api/admin/dashboard/status")
-            .body(Body::empty())
-            .unwrap();
+            .body(Body::empty())?;
 
-        let response = app.oneshot(request).await.unwrap();
+        let response = app.oneshot(request).await?;
         assert_eq!(response.status(), StatusCode::OK);
+        Ok(())
     }
 }
