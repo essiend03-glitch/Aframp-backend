@@ -96,12 +96,10 @@ impl<T: Serialize + DeserializeOwned + Send + Sync + 'static> Cache<T> for Redis
 
         match result {
             Some(json_str) => {
-                let value: T = serde_json::from_str(&json_str)
-                    .map_err(|e| {
-                        warn!("Failed to deserialize cache value for key '{}': {}", key, e);
-                        <serde_json::Error as Into<CacheError>>::into(e)
-                    })
-                    .unwrap();
+                let value: T = serde_json::from_str(&json_str).map_err(|e| {
+                    warn!("Failed to deserialize cache value for key '{}': {}", key, e);
+                    <serde_json::Error as Into<CacheError>>::into(e)
+                })?;
                 debug!("Cache hit for key: {}", key);
                 crate::metrics::cache::hits_total()
                     .with_label_values(&[crate::metrics::key_prefix(key)])
@@ -416,7 +414,9 @@ impl RedisCache {
         })?;
         // Only set TTL on first increment to preserve the window
         if count == 1 {
-            let _: () = conn.expire(key, ttl_secs as i64).await.unwrap_or(());
+            if let Err(e) = conn.expire(key, ttl_secs as i64).await {
+                warn!("Failed to set TTL on key '{}': {}", key, e);
+            }
         }
         Ok(count)
     }
@@ -473,10 +473,10 @@ mod tests {
 
     #[tokio::test]
     #[ignore] // Requires Redis
-    async fn test_basic_cache_operations() {
+    async fn test_basic_cache_operations() -> CacheResult<()> {
         let pool = super::super::init_cache_pool(super::super::CacheConfig::default())
             .await
-            .unwrap();
+            .expect("Redis pool init failed");
         let cache: RedisCache = RedisCache::new(pool);
 
         let test_data = TestData {
@@ -487,31 +487,29 @@ mod tests {
         // Test set and get
         cache
             .set("test:key", &test_data, Some(Duration::from_secs(60)))
-            .await
-            .unwrap();
-        let retrieved = cache.get("test:key").await.unwrap();
+            .await?;
+        let retrieved = cache.get("test:key").await?;
         assert_eq!(retrieved, Some(test_data));
 
         // Test exists
         assert!(<RedisCache as Cache<TestData>>::exists(&cache, "test:key")
-            .await
-            .unwrap());
+            .await?);
 
         // Test delete
         assert!(<RedisCache as Cache<TestData>>::delete(&cache, "test:key")
-            .await
-            .unwrap());
+            .await?);
         assert!(!<RedisCache as Cache<TestData>>::exists(&cache, "test:key")
-            .await
-            .unwrap());
+            .await?);
+
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore] // Requires Redis
-    async fn test_increment_decrement() {
+    async fn test_increment_decrement() -> CacheResult<()> {
         let pool = super::super::init_cache_pool(super::super::CacheConfig::default())
             .await
-            .unwrap();
+            .expect("Redis pool init failed");
         let cache = RedisCache::new(pool);
 
         let key = "test:counter";
@@ -521,22 +519,21 @@ mod tests {
 
         // Test increment
         let result = <RedisCache as Cache<String>>::increment(&cache, key, 1)
-            .await
-            .unwrap();
+            .await?;
         assert_eq!(result, 1);
 
         let result = <RedisCache as Cache<String>>::increment(&cache, key, 5)
-            .await
-            .unwrap();
+            .await?;
         assert_eq!(result, 6);
 
         // Test decrement
         let result = <RedisCache as Cache<String>>::decrement(&cache, key, 2)
-            .await
-            .unwrap();
+            .await?;
         assert_eq!(result, 4);
 
         // Clean up
         let _ = <RedisCache as Cache<String>>::delete(&cache, key).await;
+
+        Ok(())
     }
 }

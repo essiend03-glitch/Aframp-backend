@@ -18,13 +18,14 @@ use Bitmesh_backend::workers::maintenance::{MaintenanceConfig, MaintenanceWorker
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-async fn test_pool() -> PgPool {
-    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for integration tests");
-    PgPool::connect(&url).await.expect("Failed to connect to test database")
+async fn test_pool() -> Result<PgPool, Box<dyn std::error::Error>> {
+    let url = std::env::var("DATABASE_URL")?;
+    let pool = PgPool::connect(&url).await?;
+    Ok(pool)
 }
 
 /// Insert a completed transaction with a given `created_at` offset from now.
-async fn insert_old_transaction(pool: &PgPool, days_ago: i64) -> Uuid {
+async fn insert_old_transaction(pool: &PgPool, days_ago: i64) -> Result<Uuid, Box<dyn std::error::Error>> {
     let id = Uuid::new_v4();
     let wallet = format!("G{}", Uuid::new_v4().simple());
     // Ensure wallet exists (FK)
@@ -33,8 +34,7 @@ async fn insert_old_transaction(pool: &PgPool, days_ago: i64) -> Uuid {
     )
     .bind(&wallet)
     .execute(pool)
-    .await
-    .unwrap();
+    .await?;
 
     sqlx::query(
         r#"
@@ -50,14 +50,13 @@ async fn insert_old_transaction(pool: &PgPool, days_ago: i64) -> Uuid {
     .bind(&wallet)
     .bind(days_ago.to_string())
     .execute(pool)
-    .await
-    .unwrap();
+    .await?;
 
-    id
+    Ok(id)
 }
 
 /// Insert an expired onramp quote.
-async fn insert_expired_quote(pool: &PgPool) -> Uuid {
+async fn insert_expired_quote(pool: &PgPool) -> Result<Uuid, Box<dyn std::error::Error>> {
     let id = Uuid::new_v4();
     sqlx::query(
         r#"
@@ -70,13 +69,12 @@ async fn insert_expired_quote(pool: &PgPool) -> Uuid {
     .bind(id)
     .bind(Uuid::new_v4())
     .execute(pool)
-    .await
-    .unwrap();
-    id
+    .await?;
+    Ok(id)
 }
 
 /// Insert a completed webhook event older than the retention window.
-async fn insert_old_webhook(pool: &PgPool, days_ago: i64) -> Uuid {
+async fn insert_old_webhook(pool: &PgPool, days_ago: i64) -> Result<Uuid, Box<dyn std::error::Error>> {
     let id = Uuid::new_v4();
     sqlx::query(
         r#"
@@ -91,13 +89,12 @@ async fn insert_old_webhook(pool: &PgPool, days_ago: i64) -> Uuid {
     .bind(Uuid::new_v4().to_string())
     .bind(days_ago.to_string())
     .execute(pool)
-    .await
-    .unwrap();
-    id
+    .await?;
+    Ok(id)
 }
 
 /// Insert an expired nonce.
-async fn insert_expired_nonce(pool: &PgPool) -> Uuid {
+async fn insert_expired_nonce(pool: &PgPool) -> Result<Uuid, Box<dyn std::error::Error>> {
     let id = Uuid::new_v4();
     sqlx::query(
         r#"
@@ -108,13 +105,12 @@ async fn insert_expired_nonce(pool: &PgPool) -> Uuid {
     .bind(id)
     .bind(Uuid::new_v4().to_string())
     .execute(pool)
-    .await
-    .unwrap();
-    id
+    .await?;
+    Ok(id)
 }
 
 /// Insert a rate history row older than the retention window.
-async fn insert_old_rate_history(pool: &PgPool, days_ago: i64) -> Uuid {
+async fn insert_old_rate_history(pool: &PgPool, days_ago: i64) -> Result<Uuid, Box<dyn std::error::Error>> {
     let id = Uuid::new_v4();
     sqlx::query(
         r#"
@@ -125,9 +121,8 @@ async fn insert_old_rate_history(pool: &PgPool, days_ago: i64) -> Uuid {
     .bind(id)
     .bind(days_ago.to_string())
     .execute(pool)
-    .await
-    .unwrap();
-    id
+    .await?;
+    Ok(id)
 }
 
 fn aggressive_config() -> MaintenanceConfig {
@@ -145,15 +140,15 @@ fn aggressive_config() -> MaintenanceConfig {
 
 /// Full cleanup cycle: aged data across all target tables is cleaned up.
 #[tokio::test]
-async fn test_full_cleanup_cycle_with_aged_data() {
-    let pool = test_pool().await;
+async fn test_full_cleanup_cycle_with_aged_data() -> Result<(), Box<dyn std::error::Error>> {
+    let pool = test_pool().await?;
     let config = aggressive_config();
 
-    let tx_id = insert_old_transaction(&pool, 100).await;
-    let quote_id = insert_expired_quote(&pool).await;
-    let webhook_id = insert_old_webhook(&pool, 35).await;
-    let nonce_id = insert_expired_nonce(&pool).await;
-    let rate_id = insert_old_rate_history(&pool, 35).await;
+    let tx_id = insert_old_transaction(&pool, 100).await?;
+    let quote_id = insert_expired_quote(&pool).await?;
+    let webhook_id = insert_old_webhook(&pool, 35).await?;
+    let nonce_id = insert_expired_nonce(&pool).await?;
+    let rate_id = insert_old_rate_history(&pool, 35).await?;
 
     let worker = MaintenanceWorker::new(pool.clone(), None, config);
     let (_tx, rx) = watch::channel(false);
@@ -171,8 +166,7 @@ async fn test_full_cleanup_cycle_with_aged_data() {
     )
     .bind(tx_id)
     .fetch_optional(&pool)
-    .await
-    .unwrap();
+    .await?;
     assert!(in_main.is_none(), "Transaction should have been archived");
 
     let in_archive: Option<Uuid> = sqlx::query_scalar(
@@ -180,8 +174,7 @@ async fn test_full_cleanup_cycle_with_aged_data() {
     )
     .bind(tx_id)
     .fetch_optional(&pool)
-    .await
-    .unwrap();
+    .await?;
     assert!(in_archive.is_some(), "Transaction should be in archive");
 
     // Expired quote deleted
@@ -189,8 +182,7 @@ async fn test_full_cleanup_cycle_with_aged_data() {
         sqlx::query_scalar("SELECT id FROM onramp_quotes WHERE id = $1")
             .bind(quote_id)
             .fetch_optional(&pool)
-            .await
-            .unwrap();
+            .await?;
     assert!(q.is_none(), "Expired quote should be deleted");
 
     // Old webhook deleted
@@ -198,8 +190,7 @@ async fn test_full_cleanup_cycle_with_aged_data() {
         sqlx::query_scalar("SELECT id FROM webhook_events WHERE id = $1")
             .bind(webhook_id)
             .fetch_optional(&pool)
-            .await
-            .unwrap();
+            .await?;
     assert!(w.is_none(), "Old webhook should be deleted");
 
     // Expired nonce deleted
@@ -207,8 +198,7 @@ async fn test_full_cleanup_cycle_with_aged_data() {
         sqlx::query_scalar("SELECT id FROM wallet_nonces WHERE id = $1")
             .bind(nonce_id)
             .fetch_optional(&pool)
-            .await
-            .unwrap();
+            .await?;
     assert!(n.is_none(), "Expired nonce should be deleted");
 
     // Old rate history deleted
@@ -216,24 +206,24 @@ async fn test_full_cleanup_cycle_with_aged_data() {
         sqlx::query_scalar("SELECT id FROM exchange_rate_history WHERE id = $1")
             .bind(rate_id)
             .fetch_optional(&pool)
-            .await
-            .unwrap();
+            .await?;
     assert!(r.is_none(), "Old rate history should be deleted");
 
     // Cleanup report persisted
     let report_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM cleanup_reports")
             .fetch_one(&pool)
-            .await
-            .unwrap();
+            .await?;
     assert!(report_count > 0, "Cleanup report should be persisted");
+
+    Ok(())
 }
 
 /// Idempotent re-run: running the worker twice on an already-cleaned dataset
 /// produces no errors and no unintended deletions.
 #[tokio::test]
-async fn test_idempotent_rerun() {
-    let pool = test_pool().await;
+async fn test_idempotent_rerun() -> Result<(), Box<dyn std::error::Error>> {
+    let pool = test_pool().await?;
     let config = aggressive_config();
 
     // First run
@@ -252,12 +242,14 @@ async fn test_idempotent_rerun() {
     let _ = shutdown_tx2.send(true);
     let result = handle2.await;
     assert!(result.is_ok(), "Second run should complete without panic");
+
+    Ok(())
 }
 
 /// Graceful shutdown: the active cycle completes before the worker exits.
 #[tokio::test]
-async fn test_graceful_shutdown_completes_cycle() {
-    let pool = test_pool().await;
+async fn test_graceful_shutdown_completes_cycle() -> Result<(), Box<dyn std::error::Error>> {
+    let pool = test_pool().await?;
     let config = MaintenanceConfig {
         interval: Duration::from_millis(50), // fire quickly
         ..aggressive_config()
@@ -273,7 +265,7 @@ async fn test_graceful_shutdown_completes_cycle() {
 
     // Worker must finish cleanly (no panic / timeout)
     tokio::time::timeout(Duration::from_secs(10), handle)
-        .await
-        .expect("Worker should shut down within 10 seconds")
-        .expect("Worker task should not panic");
+        .await??;
+
+    Ok(())
 }

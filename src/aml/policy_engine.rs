@@ -83,7 +83,7 @@ impl AMLPolicyEngine {
 
     async fn initialize_rule_cache(&self) -> Result<(), anyhow::Error> {
         let rules = self.load_all_rules().await?;
-        let mut cache = self.rule_cache.write().unwrap();
+        let mut cache = self.rule_cache.write().map_err(|_| anyhow::anyhow!("rule cache lock poisoned"))?;
         
         for rule in rules {
             cache.insert(rule.id, rule);
@@ -95,7 +95,7 @@ impl AMLPolicyEngine {
 
     async fn initialize_policy_set_cache(&self) -> Result<(), anyhow::Error> {
         let policy_sets = self.load_all_policy_sets().await?;
-        let mut cache = self.policy_set_cache.write().unwrap();
+        let mut cache = self.policy_set_cache.write().map_err(|_| anyhow::anyhow!("policy set cache lock poisoned"))?;
         
         for policy_set in policy_sets {
             cache.insert(policy_set.id, policy_set);
@@ -189,7 +189,7 @@ impl AMLPolicyEngine {
     }
 
     async fn get_applicable_policy_set(&self, context: &EvaluationContext) -> Result<PolicySet, anyhow::Error> {
-        let cache = self.policy_set_cache.read().unwrap();
+        let cache = self.policy_set_cache.read().map_err(|_| anyhow::anyhow!("policy set cache lock poisoned"))?;
         
         for policy_set in cache.values() {
             if self.is_policy_set_applicable(policy_set, context) {
@@ -241,7 +241,7 @@ impl AMLPolicyEngine {
 
     async fn get_default_policy_set(&self) -> Result<PolicySet, anyhow::Error> {
         // Try to find a default policy set in cache first
-        let cache = self.policy_set_cache.read().unwrap();
+        let cache = self.policy_set_cache.read().map_err(|_| anyhow::anyhow!("policy set cache lock poisoned"))?;
         
         for policy_set in cache.values() {
             if policy_set.name == "Default" {
@@ -280,16 +280,16 @@ impl AMLPolicyEngine {
     async fn get_default_rule_ids(&self) -> Result<Vec<Uuid>, anyhow::Error> {
         // Return IDs of core AML rules that should be in default policy
         Ok(vec![
-            Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(), // Structuring rule
-            Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap(), // Velocity rule
-            Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(), // Amount anomaly rule
-            Uuid::parse_str("00000000-0000-0000-0000-000000000004").unwrap(), // Geographic risk rule
-            Uuid::parse_str("00000000-0000-0000-0000-000000000005").unwrap(), // Counterparty risk rule
+            Uuid::parse_str("00000000-0000-0000-0000-000000000001")?, // Structuring rule
+            Uuid::parse_str("00000000-0000-0000-0000-000000000002")?, // Velocity rule
+            Uuid::parse_str("00000000-0000-0000-0000-000000000003")?, // Amount anomaly rule
+            Uuid::parse_str("00000000-0000-0000-0000-000000000004")?, // Geographic risk rule
+            Uuid::parse_str("00000000-0000-0000-0000-000000000005")?, // Counterparty risk rule
         ])
     }
 
     async fn load_applicable_rules(&self, policy_set: &PolicySet) -> Result<Vec<AMLRule>, anyhow::Error> {
-        let cache = self.rule_cache.read().unwrap();
+        let cache = self.rule_cache.read().map_err(|_| anyhow::anyhow!("rule cache lock poisoned"))?;
         let mut rules = Vec::new();
 
         for rule_id in &policy_set.rule_ids {
@@ -300,8 +300,9 @@ impl AMLPolicyEngine {
             }
         }
 
-        // Sort by priority (risk weight descending)
-        rules.sort_by(|a, b| b.risk_weight.partial_cmp(&a.risk_weight).unwrap());
+        // Sort by priority (risk weight descending). risk_weight may be NaN for
+        // malformed rules; treat those as equal rather than panicking.
+        rules.sort_by(|a, b| b.risk_weight.partial_cmp(&a.risk_weight).unwrap_or(std::cmp::Ordering::Equal));
 
         Ok(rules)
     }
@@ -561,9 +562,9 @@ impl AMLPolicyEngine {
         
         // Insert into database
         let inserted_rule = self.insert_rule_into_db(&rule).await?;
-        
+
         // Update cache
-        let mut cache = self.rule_cache.write().unwrap();
+        let mut cache = self.rule_cache.write().map_err(|_| anyhow::anyhow!("rule cache lock poisoned"))?;
         cache.insert(inserted_rule.id, inserted_rule.clone());
         
         // Invalidate evaluation cache
@@ -580,9 +581,9 @@ impl AMLPolicyEngine {
         
         // Update in database
         let updated_rule = self.update_rule_in_db(rule_id, &updates).await?;
-        
+
         // Update cache
-        let mut cache = self.rule_cache.write().unwrap();
+        let mut cache = self.rule_cache.write().map_err(|_| anyhow::anyhow!("rule cache lock poisoned"))?;
         cache.insert(updated_rule.id, updated_rule.clone());
         
         // Invalidate evaluation cache
@@ -611,7 +612,7 @@ impl AMLPolicyEngine {
     }
 
     async fn get_rule_by_id(&self, rule_id: Uuid) -> Result<AMLRule, anyhow::Error> {
-        let cache = self.rule_cache.read().unwrap();
+        let cache = self.rule_cache.read().map_err(|_| anyhow::anyhow!("rule cache lock poisoned"))?;
         cache.get(&rule_id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("Rule not found: {}", rule_id))
@@ -789,7 +790,7 @@ impl AMLPolicyEngine {
     }
 
     async fn get_policy_set_by_id(&self, policy_set_id: Uuid) -> Result<PolicySet, anyhow::Error> {
-        let cache = self.policy_set_cache.read().unwrap();
+        let cache = self.policy_set_cache.read().map_err(|_| anyhow::anyhow!("policy set cache lock poisoned"))?;
         cache.get(&policy_set_id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("Policy set not found: {}", policy_set_id))

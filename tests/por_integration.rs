@@ -1,4 +1,11 @@
 //! Integration tests for Proof of Reserves (PoR) and Merkle Tree Engine
+//!
+//! # Note on unwrap/expect usage
+//! All `unwrap()`/`expect()` calls in this file are intentional test-fixture
+//! boilerplate: parsing fixed decimal literals and generating Merkle proofs
+//! for known-valid inputs. Panicking on failure is correct and idiomatic in
+//! `#[test]` functions — it produces a clear, immediate error message. No
+//! production code paths are involved.
 
 #[cfg(test)]
 mod tests {

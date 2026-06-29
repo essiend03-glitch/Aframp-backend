@@ -41,16 +41,16 @@ fn metrics() -> &'static Metrics {
             "payment_poller_checked_total",
             "Payments checked per cycle"
         )
-        .unwrap(),
+        .expect("failed to register payment_poller_checked_total"),
         confirmed: register_int_counter!(
             "payment_poller_confirmed_total",
             "Payments confirmed per cycle"
         )
-        .unwrap(),
+        .expect("failed to register payment_poller_confirmed_total"),
         failed: register_int_counter!("payment_poller_failed_total", "Payments failed per cycle")
-            .unwrap(),
+            .expect("failed to register payment_poller_failed_total"),
         retried: register_int_counter!("payment_poller_retried_total", "Retry attempts per cycle")
-            .unwrap(),
+            .expect("failed to register payment_poller_retried_total"),
     })
 }
 
@@ -455,16 +455,16 @@ mod tests {
     fn test_amounts_match_exact() {
         let cfg = worker_for_tests();
         // We test the logic directly since amounts_match is on the worker
-        let expected = BigDecimal::from_str("1000.00").unwrap();
+        let expected = BigDecimal::from_str("1000.00").expect("valid decimal literal");
         let confirmed = "1000.00";
-        let diff = (&expected - BigDecimal::from_str(confirmed).unwrap()).abs();
+        let diff = (&expected - BigDecimal::from_str(confirmed).expect("valid decimal literal")).abs();
         assert!(diff <= BigDecimal::from(1));
     }
 
     #[test]
     fn test_amounts_mismatch_detected() {
-        let expected = BigDecimal::from_str("1000.00").unwrap();
-        let confirmed = BigDecimal::from_str("500.00").unwrap();
+        let expected = BigDecimal::from_str("1000.00").expect("valid decimal literal");
+        let confirmed = BigDecimal::from_str("500.00").expect("valid decimal literal");
         let diff = (&expected - &confirmed).abs();
         assert!(
             diff > BigDecimal::from(1),
@@ -474,8 +474,8 @@ mod tests {
 
     #[test]
     fn test_amounts_within_tolerance() {
-        let expected = BigDecimal::from_str("1000.00").unwrap();
-        let confirmed = BigDecimal::from_str("1000.50").unwrap();
+        let expected = BigDecimal::from_str("1000.00").expect("valid decimal literal");
+        let confirmed = BigDecimal::from_str("1000.50").expect("valid decimal literal");
         let diff = (&expected - &confirmed).abs();
         assert!(
             diff <= BigDecimal::from(1),

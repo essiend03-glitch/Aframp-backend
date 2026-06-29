@@ -1,6 +1,12 @@
 //! Integration tests for CORS and Security Headers middleware
 //!
 //! Tests the implementation of Issue #86 - CORS and Security Headers
+//!
+//! # Note on unwrap/expect usage
+//! All `unwrap()` calls in this file are intentional test-fixture boilerplate:
+//! building requests, driving `oneshot`, and reading expected response headers.
+//! Panicking on failure is correct in tests — it produces a clear, immediate
+//! error message. No production code paths are involved.
 
 use axum::{
     body::Body,

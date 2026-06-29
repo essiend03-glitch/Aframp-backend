@@ -10,6 +10,11 @@ use uuid::Uuid;
 
 type BigDecimal = sqlx::types::BigDecimal;
 
+const ZERO: BigDecimal = BigDecimal::zero();
+const ONE_HUNDRED: BigDecimal = BigDecimal::from(100);
+const XLM_FEE: BigDecimal = BigDecimal::from_str("0.00001").unwrap();
+const DEFAULT_XLM_RATE: BigDecimal = BigDecimal::from(150);
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeeBreakdown {
     #[serde(with = "bigdecimal_serde")]
@@ -155,8 +160,8 @@ impl FeeCalculationService {
             self.calculate_platform_fee(&amount, config)
         } else {
             PlatformFee {
-                percent: BigDecimal::from_str("0").unwrap(),
-                calculated: BigDecimal::from_str("0").unwrap(),
+                percent: ZERO.clone(),
+                calculated: ZERO.clone(),
             }
         };
 
@@ -165,15 +170,15 @@ impl FeeCalculationService {
         let total = provider_fee
             .as_ref()
             .map(|p| p.calculated.clone())
-            .unwrap_or_else(|| BigDecimal::from_str("0").unwrap())
+            .unwrap_or_else(|| ZERO.clone())
             + platform_fee.calculated.clone()
             + stellar_fee.ngn.clone();
 
         let net_amount = &amount - &total;
-        let effective_rate = if amount > BigDecimal::from_str("0").unwrap() {
-            (&total / &amount) * BigDecimal::from_str("100").unwrap()
+        let effective_rate = if amount > ZERO {
+            (&total / &amount) * ONE_HUNDRED.clone()
         } else {
-            BigDecimal::from_str("0").unwrap()
+            ZERO.clone()
         };
 
         let breakdown = FeeBreakdown {
@@ -223,8 +228,8 @@ impl FeeCalculationService {
         }
 
         Ok((
-            min_fee.unwrap_or_else(|| BigDecimal::from_str("0").unwrap()),
-            max_fee.unwrap_or_else(|| BigDecimal::from_str("0").unwrap()),
+            min_fee.unwrap_or_else(|| ZERO.clone()),
+            max_fee.unwrap_or_else(|| ZERO.clone()),
         ))
     }
 
@@ -354,9 +359,9 @@ impl FeeCalculationService {
         let flat = config
             .provider_fee_flat
             .clone()
-            .unwrap_or_else(|| BigDecimal::from_str("0").unwrap());
+            .unwrap_or_else(|| ZERO.clone());
 
-        let mut calculated = (amount * &percent / BigDecimal::from_str("100").unwrap()) + &flat;
+        let mut calculated = (amount * &percent / ONE_HUNDRED.clone()) + &flat;
 
         if let Some(cap) = &config.provider_fee_cap {
             if &calculated > cap {
@@ -378,8 +383,8 @@ impl FeeCalculationService {
         let percent = config
             .platform_fee_percent
             .clone()
-            .unwrap_or_else(|| BigDecimal::from_str("0").unwrap());
-        let calculated = amount * &percent / BigDecimal::from_str("100").unwrap();
+            .unwrap_or_else(|| ZERO.clone());
+        let calculated = amount * &percent / ONE_HUNDRED.clone();
 
         PlatformFee {
             percent,
@@ -388,16 +393,16 @@ impl FeeCalculationService {
     }
 
     async fn calculate_stellar_fee(&self) -> StellarFee {
-        let xlm_fee = BigDecimal::from_str("0.00001").unwrap();
+        let xlm_fee = XLM_FEE.clone();
         let xlm_rate = self
             .get_xlm_rate()
             .await
-            .unwrap_or_else(|| BigDecimal::from_str("150").unwrap());
+            .unwrap_or_else(|| DEFAULT_XLM_RATE.clone());
         let _ngn_fee = &xlm_fee * &xlm_rate;
 
         StellarFee {
             xlm: xlm_fee,
-            ngn: BigDecimal::from_str("0").unwrap(), // Absorbed by platform
+            ngn: ZERO.clone(), // Absorbed by platform
             absorbed: true,
         }
     }
@@ -417,7 +422,7 @@ impl FeeCalculationService {
 
         // In production, fetch from CoinGecko or similar
         // For now, return default
-        let rate = BigDecimal::from_str("150").unwrap();
+        let rate = DEFAULT_XLM_RATE.clone();
         let mut cache = self.xlm_rate_cache.write().await;
         *cache = Some((rate.clone(), chrono::Utc::now()));
         Some(rate)
@@ -449,7 +454,7 @@ impl FeeCalculationService {
                     .provider
                     .as_ref()
                     .map(|p| &p.calculated)
-                    .unwrap_or(&BigDecimal::from_str("0").unwrap()),
+                    .unwrap_or(&ZERO),
             )
             .bind(&breakdown.platform.calculated)
             .bind(&breakdown.stellar.xlm)

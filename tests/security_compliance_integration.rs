@@ -13,16 +13,17 @@
 
 #![cfg(feature = "integration")]
 
+use anyhow::Context;
 use chrono::{Duration, Utc};
 use std::sync::Arc;
 use uuid::Uuid;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-async fn test_db_pool() -> sqlx::PgPool {
+async fn test_db_pool() -> Result<sqlx::PgPool, anyhow::Error> {
     let url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/aframp_test".to_string());
-    sqlx::PgPool::connect(&url).await.expect("test DB pool")
+    sqlx::PgPool::connect(&url).await.context("test DB pool")
 }
 
 fn default_config() -> Bitmesh_backend::security_compliance::config::SecurityComplianceConfig {
@@ -70,74 +71,76 @@ fn make_test_vuln(
 // ── Test: vulnerability lifecycle ─────────────────────────────────────────────
 
 #[tokio::test]
-async fn test_vulnerability_ingest_and_retrieve() {
+async fn test_vulnerability_ingest_and_retrieve() -> Result<(), anyhow::Error> {
     use Bitmesh_backend::security_compliance::{
         models::{VulnSeverity, VulnSource, VulnStatus},
         repository::SecurityComplianceRepository,
     };
 
-    let pool = test_db_pool().await;
+    let pool = test_db_pool().await?;
     let repo = SecurityComplianceRepository::new(pool);
 
     let vuln = make_test_vuln(VulnSeverity::High, VulnSource::CargoAudit);
     let vuln_id = vuln.id;
 
-    repo.insert_vulnerability(&vuln).await.expect("insert vulnerability");
+    repo.insert_vulnerability(&vuln).await.context("insert vulnerability")?;
 
     let fetched = repo
         .get_vulnerability(vuln_id)
         .await
-        .expect("get vulnerability")
-        .expect("vulnerability should exist");
+        .context("get vulnerability")?
+        .context("vulnerability should exist")?;
 
     assert_eq!(fetched.id, vuln_id);
     assert_eq!(fetched.severity, VulnSeverity::High);
     assert_eq!(fetched.status, VulnStatus::Open);
     assert_eq!(fetched.source, VulnSource::CargoAudit);
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_vulnerability_acknowledge_lifecycle() {
+async fn test_vulnerability_acknowledge_lifecycle() -> Result<(), anyhow::Error> {
     use Bitmesh_backend::security_compliance::{
         models::{VulnSeverity, VulnSource, VulnStatus},
         repository::SecurityComplianceRepository,
     };
 
-    let pool = test_db_pool().await;
+    let pool = test_db_pool().await?;
     let repo = SecurityComplianceRepository::new(pool);
 
     let vuln = make_test_vuln(VulnSeverity::Critical, VulnSource::Sast);
     let vuln_id = vuln.id;
-    repo.insert_vulnerability(&vuln).await.expect("insert");
+    repo.insert_vulnerability(&vuln).await.context("insert")?;
 
     let updated = repo
         .acknowledge_vulnerability(vuln_id, "security-team", "Will patch in next sprint")
         .await
-        .expect("acknowledge");
+        .context("acknowledge")?;
     assert!(updated, "acknowledge should return true for open vuln");
 
     let fetched = repo
         .get_vulnerability(vuln_id)
         .await
-        .expect("get")
-        .expect("exists");
+        .context("get")?
+        .context("exists")?;
     assert_eq!(fetched.status, VulnStatus::Acknowledged);
     assert_eq!(fetched.acknowledged_by.as_deref(), Some("security-team"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_vulnerability_resolve_lifecycle() {
+async fn test_vulnerability_resolve_lifecycle() -> Result<(), anyhow::Error> {
     use Bitmesh_backend::security_compliance::{
         models::{VulnSeverity, VulnSource, VulnStatus},
         repository::SecurityComplianceRepository,
     };
 
-    let pool = test_db_pool().await;
+    let pool = test_db_pool().await?;
     let repo = SecurityComplianceRepository::new(pool);
 
     let vuln = make_test_vuln(VulnSeverity::Medium, VulnSource::ContainerScan);
     let vuln_id = vuln.id;
-    repo.insert_vulnerability(&vuln).await.expect("insert");
+    repo.insert_vulnerability(&vuln).await.context("insert")?;
 
     let resolved = repo
         .resolve_vulnerability(
@@ -147,31 +150,32 @@ async fn test_vulnerability_resolve_lifecycle() {
             Some("abc123def456"),
         )
         .await
-        .expect("resolve");
+        .context("resolve")?;
     assert!(resolved);
 
     let fetched = repo
         .get_vulnerability(vuln_id)
         .await
-        .expect("get")
-        .expect("exists");
+        .context("get")?
+        .context("exists")?;
     assert_eq!(fetched.status, VulnStatus::Resolved);
     assert_eq!(fetched.resolving_commit.as_deref(), Some("abc123def456"));
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_vulnerability_accept_risk_lifecycle() {
+async fn test_vulnerability_accept_risk_lifecycle() -> Result<(), anyhow::Error> {
     use Bitmesh_backend::security_compliance::{
         models::{VulnSeverity, VulnSource, VulnStatus},
         repository::SecurityComplianceRepository,
     };
 
-    let pool = test_db_pool().await;
+    let pool = test_db_pool().await?;
     let repo = SecurityComplianceRepository::new(pool);
 
     let vuln = make_test_vuln(VulnSeverity::Low, VulnSource::InfraConfig);
     let vuln_id = vuln.id;
-    repo.insert_vulnerability(&vuln).await.expect("insert");
+    repo.insert_vulnerability(&vuln).await.context("insert")?;
 
     let expiry = Utc::now() + Duration::days(90);
     let accepted = repo
@@ -182,55 +186,57 @@ async fn test_vulnerability_accept_risk_lifecycle() {
             expiry,
         )
         .await
-        .expect("accept risk");
+        .context("accept risk")?;
     assert!(accepted);
 
     let fetched = repo
         .get_vulnerability(vuln_id)
         .await
-        .expect("get")
-        .expect("exists");
+        .context("get")?
+        .context("exists")?;
     assert_eq!(fetched.status, VulnStatus::RiskAccepted);
     assert!(fetched.risk_justification.is_some());
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_cannot_resolve_already_resolved_vuln() {
+async fn test_cannot_resolve_already_resolved_vuln() -> Result<(), anyhow::Error> {
     use Bitmesh_backend::security_compliance::{
         models::{VulnSeverity, VulnSource},
         repository::SecurityComplianceRepository,
     };
 
-    let pool = test_db_pool().await;
+    let pool = test_db_pool().await?;
     let repo = SecurityComplianceRepository::new(pool);
 
     let vuln = make_test_vuln(VulnSeverity::High, VulnSource::Manual);
     let vuln_id = vuln.id;
-    repo.insert_vulnerability(&vuln).await.expect("insert");
+    repo.insert_vulnerability(&vuln).await.context("insert")?;
 
     // First resolve succeeds
     repo.resolve_vulnerability(vuln_id, "dev", "Fixed", None)
         .await
-        .expect("first resolve");
+        .context("first resolve")?;
 
     // Second resolve should return false (no rows affected)
     let second = repo
         .resolve_vulnerability(vuln_id, "dev", "Fixed again", None)
         .await
-        .expect("second resolve attempt");
+        .context("second resolve attempt")?;
     assert!(!second, "resolving an already-resolved vuln should return false");
+    Ok(())
 }
 
 // ── Test: allowlist enforcement ───────────────────────────────────────────────
 
 #[tokio::test]
-async fn test_allowlist_entry_persisted_and_checked() {
+async fn test_allowlist_entry_persisted_and_checked() -> Result<(), anyhow::Error> {
     use Bitmesh_backend::security_compliance::{
         models::{AllowlistEntry, VulnSource},
         repository::SecurityComplianceRepository,
     };
 
-    let pool = test_db_pool().await;
+    let pool = test_db_pool().await?;
     let repo = SecurityComplianceRepository::new(pool);
 
     let identifier = format!("RUSTSEC-TEST-{}", Uuid::new_v4().simple());
@@ -244,23 +250,24 @@ async fn test_allowlist_entry_persisted_and_checked() {
         created_at: Utc::now(),
     };
 
-    repo.insert_allowlist_entry(&entry).await.expect("insert allowlist entry");
+    repo.insert_allowlist_entry(&entry).await.context("insert allowlist entry")?;
 
     let is_listed = repo
         .is_allowlisted(&identifier)
         .await
-        .expect("allowlist check");
+        .context("allowlist check")?;
     assert!(is_listed, "identifier should be in allowlist");
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_expired_allowlist_entry_not_active() {
+async fn test_expired_allowlist_entry_not_active() -> Result<(), anyhow::Error> {
     use Bitmesh_backend::security_compliance::{
         models::{AllowlistEntry, VulnSource},
         repository::SecurityComplianceRepository,
     };
 
-    let pool = test_db_pool().await;
+    let pool = test_db_pool().await?;
     let repo = SecurityComplianceRepository::new(pool);
 
     let identifier = format!("RUSTSEC-EXPIRED-{}", Uuid::new_v4().simple());
@@ -274,26 +281,27 @@ async fn test_expired_allowlist_entry_not_active() {
         created_at: Utc::now() - Duration::days(31),
     };
 
-    repo.insert_allowlist_entry(&entry).await.expect("insert expired entry");
+    repo.insert_allowlist_entry(&entry).await.context("insert expired entry")?;
 
     let is_listed = repo
         .is_allowlisted(&identifier)
         .await
-        .expect("allowlist check");
+        .context("allowlist check")?;
     assert!(!is_listed, "expired allowlist entry should not be active");
+    Ok(())
 }
 
 // ── Test: posture score computation and persistence ───────────────────────────
 
 #[tokio::test]
-async fn test_posture_snapshot_persisted_and_retrieved() {
+async fn test_posture_snapshot_persisted_and_retrieved() -> Result<(), anyhow::Error> {
     use Bitmesh_backend::security_compliance::{
         models::{CompliancePosture, VulnSeverity, VulnSource},
         repository::SecurityComplianceRepository,
         scoring::PostureScorer,
     };
 
-    let pool = test_db_pool().await;
+    let pool = test_db_pool().await?;
     let repo = SecurityComplianceRepository::new(pool);
     let config = default_config();
 
@@ -303,10 +311,10 @@ async fn test_posture_snapshot_persisted_and_retrieved() {
         make_test_vuln(VulnSeverity::Medium, VulnSource::Sast),
     ];
     for v in &vulns {
-        repo.insert_vulnerability(v).await.expect("insert");
+        repo.insert_vulnerability(v).await.context("insert")?;
     }
 
-    let open_rows = repo.list_open_vulnerabilities().await.expect("list open");
+    let open_rows = repo.list_open_vulnerabilities().await.context("list open")?;
     let open_vulns: Vec<_> = open_rows.into_iter().map(Into::into).collect();
 
     let scorer = PostureScorer::new(&config);
@@ -330,28 +338,29 @@ async fn test_posture_snapshot_persisted_and_retrieved() {
 
     repo.upsert_posture_snapshot(&snapshot)
         .await
-        .expect("upsert posture snapshot");
+        .context("upsert posture snapshot")?;
 
     let latest = repo
         .latest_posture_snapshot()
         .await
-        .expect("latest snapshot")
-        .expect("snapshot should exist");
+        .context("latest snapshot")?
+        .context("snapshot should exist")?;
 
     assert!(latest.posture_score > bigdecimal::BigDecimal::from(0));
     assert!(latest.posture_score <= bigdecimal::BigDecimal::from(100));
+    Ok(())
 }
 
 // ── Test: compliance report generation ───────────────────────────────────────
 
 #[tokio::test]
-async fn test_compliance_report_generated_and_retrieved() {
+async fn test_compliance_report_generated_and_retrieved() -> Result<(), anyhow::Error> {
     use Bitmesh_backend::security_compliance::{
         models::ComplianceReport,
         repository::SecurityComplianceRepository,
     };
 
-    let pool = test_db_pool().await;
+    let pool = test_db_pool().await?;
     let repo = SecurityComplianceRepository::new(pool);
 
     let now = Utc::now();
@@ -377,25 +386,26 @@ async fn test_compliance_report_generated_and_retrieved() {
 
     repo.insert_compliance_report(&report)
         .await
-        .expect("insert report");
+        .context("insert report")?;
 
-    let reports = repo.list_compliance_reports(10).await.expect("list reports");
+    let reports = repo.list_compliance_reports(10).await.context("list reports")?;
     assert!(!reports.is_empty(), "should have at least one report");
 
     let found = reports.iter().find(|r| r.id == report.id);
     assert!(found.is_some(), "inserted report should be retrievable");
+    Ok(())
 }
 
 // ── Test: SLA deadline computation ───────────────────────────────────────────
 
 #[tokio::test]
-async fn test_sla_deadline_correctly_computed_on_ingest() {
+async fn test_sla_deadline_correctly_computed_on_ingest() -> Result<(), anyhow::Error> {
     use Bitmesh_backend::security_compliance::{
         models::{VulnSeverity, VulnSource},
         repository::SecurityComplianceRepository,
     };
 
-    let pool = test_db_pool().await;
+    let pool = test_db_pool().await?;
     let repo = SecurityComplianceRepository::new(pool);
     let config = default_config();
 
@@ -403,13 +413,13 @@ async fn test_sla_deadline_correctly_computed_on_ingest() {
     let vuln_id = vuln.id;
     let discovered_at = vuln.discovered_at;
 
-    repo.insert_vulnerability(&vuln).await.expect("insert");
+    repo.insert_vulnerability(&vuln).await.context("insert")?;
 
     let fetched = repo
         .get_vulnerability(vuln_id)
         .await
-        .expect("get")
-        .expect("exists");
+        .context("get")?
+        .context("exists")?;
 
     let expected_sla = discovered_at + Duration::hours(config.sla_critical_hours);
     let actual_sla = fetched.sla_deadline;
@@ -422,35 +432,37 @@ async fn test_sla_deadline_correctly_computed_on_ingest() {
         config.sla_critical_hours,
         diff
     );
+    Ok(())
 }
 
 // ── Test: paginated vulnerability listing ────────────────────────────────────
 
 #[tokio::test]
-async fn test_vulnerability_listing_pagination() {
+async fn test_vulnerability_listing_pagination() -> Result<(), anyhow::Error> {
     use Bitmesh_backend::security_compliance::{
         models::{VulnSeverity, VulnSource},
         repository::SecurityComplianceRepository,
     };
 
-    let pool = test_db_pool().await;
+    let pool = test_db_pool().await?;
     let repo = SecurityComplianceRepository::new(pool);
 
     // Insert 5 vulnerabilities
     for _ in 0..5 {
         let vuln = make_test_vuln(VulnSeverity::Low, VulnSource::Manual);
-        repo.insert_vulnerability(&vuln).await.expect("insert");
+        repo.insert_vulnerability(&vuln).await.context("insert")?;
     }
 
     let page1 = repo
         .list_vulnerabilities(None, None, None, 3, 0)
         .await
-        .expect("page 1");
+        .context("page 1")?;
     assert_eq!(page1.len(), 3, "page 1 should have 3 results");
 
     let page2 = repo
         .list_vulnerabilities(None, None, None, 3, 3)
         .await
-        .expect("page 2");
+        .context("page 2")?;
     assert!(!page2.is_empty(), "page 2 should have results");
+    Ok(())
 }

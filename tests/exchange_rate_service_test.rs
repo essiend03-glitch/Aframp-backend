@@ -28,16 +28,15 @@ mod tests {
     use Bitmesh_backend::services::fee_structure::FeeStructureService;
     use Bitmesh_backend::services::rate_providers::FixedRateProvider;
 
-    async fn setup_test_db() -> PgPool {
+    async fn setup_test_db() -> Result<PgPool, Box<dyn std::error::Error>> {
         let database_url = std::env::var("DATABASE_URL")
             .unwrap_or_else(|_| "postgresql://localhost/aframp_test".to_string());
 
-        PgPool::connect(&database_url)
-            .await
-            .expect("Failed to connect to test database")
+        let pool = PgPool::connect(&database_url).await?;
+        Ok(pool)
     }
 
-    async fn setup_test_cache() -> RedisCache {
+    async fn setup_test_cache() -> Result<RedisCache, Box<dyn std::error::Error>> {
         let redis_url =
             std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string());
 
@@ -48,11 +47,9 @@ mod tests {
             ..CacheConfig::default()
         };
 
-        let pool = init_cache_pool(config)
-            .await
-            .expect("Failed to initialize cache pool");
+        let pool = init_cache_pool(config).await?;
 
-        RedisCache::new(pool)
+        Ok(RedisCache::new(pool))
     }
 
     async fn setup_fee_structures(pool: &PgPool) {
@@ -96,9 +93,9 @@ mod tests {
 
     #[tokio::test]
     #[ignore] // Requires database and Redis
-    async fn test_get_rate_cngn_ngn() {
-        let pool = setup_test_db().await;
-        let cache = setup_test_cache().await;
+    async fn test_get_rate_cngn_ngn() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = setup_test_db().await?;
+        let cache = setup_test_cache().await?;
 
         let repo = ExchangeRateRepository::with_cache(pool.clone(), cache.clone());
         let provider = Arc::new(FixedRateProvider::new());
@@ -108,19 +105,21 @@ mod tests {
             .add_provider(provider);
 
         // Test NGN -> cNGN rate
-        let rate = service.get_rate("NGN", "cNGN").await.unwrap();
+        let rate = service.get_rate("NGN", "cNGN").await?;
         assert_eq!(rate, BigDecimal::from(1));
 
         // Test cNGN -> NGN rate
-        let rate = service.get_rate("cNGN", "NGN").await.unwrap();
+        let rate = service.get_rate("cNGN", "NGN").await?;
         assert_eq!(rate, BigDecimal::from(1));
+
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore] // Requires database and Redis
-    async fn test_rate_caching() {
-        let pool = setup_test_db().await;
-        let cache = setup_test_cache().await;
+    async fn test_rate_caching() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = setup_test_db().await?;
+        let cache = setup_test_cache().await?;
 
         let repo = ExchangeRateRepository::with_cache(pool.clone(), cache.clone());
         let provider = Arc::new(FixedRateProvider::new());
@@ -130,20 +129,22 @@ mod tests {
             .add_provider(provider);
 
         // First call - cache miss
-        let rate1 = service.get_rate("NGN", "cNGN").await.unwrap();
+        let rate1 = service.get_rate("NGN", "cNGN").await?;
 
         // Second call - should hit cache
-        let rate2 = service.get_rate("NGN", "cNGN").await.unwrap();
+        let rate2 = service.get_rate("NGN", "cNGN").await?;
 
         assert_eq!(rate1, rate2);
         assert_eq!(rate1, BigDecimal::from(1));
+
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore] // Requires database and Redis
-    async fn test_conversion_calculation_with_fees() {
-        let pool = setup_test_db().await;
-        let cache = setup_test_cache().await;
+    async fn test_conversion_calculation_with_fees() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = setup_test_db().await?;
+        let cache = setup_test_cache().await?;
 
         // Setup fee structures
         setup_fee_structures(&pool).await;
@@ -167,7 +168,7 @@ mod tests {
             direction: ConversionDirection::Buy,
         };
 
-        let result = service.calculate_conversion(request).await.unwrap();
+        let result = service.calculate_conversion(request).await?;
 
         // Verify base rate
         assert_eq!(result.base_rate, "1");
@@ -179,20 +180,22 @@ mod tests {
         // Provider fee: 1.4% of 50,000 = 700
         // Platform fee: 0.1% of 50,000 = 50
         // Total fees: 750
-        let total_fees = BigDecimal::from_str(&result.fees.total_fees).unwrap();
+        let total_fees = BigDecimal::from_str(&result.fees.total_fees)?;
         assert!(total_fees > BigDecimal::from(0));
 
         // Net amount should be less than gross
-        let net_amount = BigDecimal::from_str(&result.net_amount).unwrap();
-        let gross_amount = BigDecimal::from_str(&result.gross_amount).unwrap();
+        let net_amount = BigDecimal::from_str(&result.net_amount)?;
+        let gross_amount = BigDecimal::from_str(&result.gross_amount)?;
         assert!(net_amount < gross_amount);
+
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore] // Requires database
-    async fn test_update_rate() {
-        let pool = setup_test_db().await;
-        let cache = setup_test_cache().await;
+    async fn test_update_rate() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = setup_test_db().await?;
+        let cache = setup_test_cache().await?;
 
         let repo = ExchangeRateRepository::with_cache(pool.clone(), cache.clone());
         let service =
@@ -202,24 +205,25 @@ mod tests {
         let new_rate = BigDecimal::from(1);
         service
             .update_rate("NGN", "cNGN", new_rate.clone(), "test")
-            .await
-            .unwrap();
+            .await?;
 
         // Verify rate was stored
-        let stored_rate = service.get_rate("NGN", "cNGN").await.unwrap();
+        let stored_rate = service.get_rate("NGN", "cNGN").await?;
         assert_eq!(stored_rate, new_rate);
+
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore] // Requires database
-    async fn test_rate_validation() {
-        let pool = setup_test_db().await;
+    async fn test_rate_validation() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = setup_test_db().await?;
         let repo = ExchangeRateRepository::new(pool.clone());
 
         let service = ExchangeRateService::new(repo, ExchangeRateServiceConfig::default());
 
         // Test invalid cNGN rate (too far from 1.0)
-        let invalid_rate = BigDecimal::from_str("1.5").unwrap();
+        let invalid_rate = BigDecimal::from_str("1.5")?;
         let result = service
             .update_rate("NGN", "cNGN", invalid_rate, "test")
             .await;
@@ -236,12 +240,14 @@ mod tests {
         let valid_rate = BigDecimal::from(1);
         let result = service.update_rate("NGN", "cNGN", valid_rate, "test").await;
         assert!(result.is_ok());
+
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore] // Requires database
-    async fn test_invalid_amount_conversion() {
-        let pool = setup_test_db().await;
+    async fn test_invalid_amount_conversion() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = setup_test_db().await?;
         let repo = ExchangeRateRepository::new(pool.clone());
         let provider = Arc::new(FixedRateProvider::new());
 
@@ -269,13 +275,15 @@ mod tests {
 
         let result = service.calculate_conversion(request).await;
         assert!(result.is_err());
+
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore] // Requires database and Redis
-    async fn test_cache_invalidation() {
-        let pool = setup_test_db().await;
-        let cache = setup_test_cache().await;
+    async fn test_cache_invalidation() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = setup_test_db().await?;
+        let cache = setup_test_cache().await?;
 
         let repo = ExchangeRateRepository::with_cache(pool.clone(), cache.clone());
         let provider = Arc::new(FixedRateProvider::new());
@@ -285,23 +293,25 @@ mod tests {
             .add_provider(provider);
 
         // Get rate to populate cache
-        let _ = service.get_rate("NGN", "cNGN").await.unwrap();
+        let _ = service.get_rate("NGN", "cNGN").await?;
 
         // Invalidate cache
-        service.invalidate_cache("NGN", "cNGN").await.unwrap();
+        service.invalidate_cache("NGN", "cNGN").await?;
 
         // Verify cache was cleared
         let cache_key =
             Bitmesh_backend::cache::keys::exchange_rate::CurrencyPairKey::new("NGN", "cNGN");
         let cached: Option<Bitmesh_backend::services::exchange_rate::RateData> =
-            cache.get(&cache_key.to_string()).await.unwrap();
+            cache.get(&cache_key.to_string()).await?;
         assert!(cached.is_none());
+
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore] // Requires database
-    async fn test_historical_rate_query() {
-        let pool = setup_test_db().await;
+    async fn test_historical_rate_query() -> Result<(), Box<dyn std::error::Error>> {
+        let pool = setup_test_db().await?;
         let repo = ExchangeRateRepository::new(pool.clone());
         let provider = Arc::new(FixedRateProvider::new());
 
@@ -312,16 +322,16 @@ mod tests {
         let rate = BigDecimal::from(1);
         service
             .update_rate("NGN", "cNGN", rate.clone(), "test")
-            .await
-            .unwrap();
+            .await?;
 
         // Query historical rate
         let timestamp = Utc::now();
         let historical_rate = service
             .get_historical_rate("NGN", "cNGN", timestamp)
-            .await
-            .unwrap();
+            .await?;
 
         assert_eq!(historical_rate, rate);
+
+        Ok(())
     }
 }

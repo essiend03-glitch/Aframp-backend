@@ -513,8 +513,14 @@ mod test_14_1_full_lifecycle {
             "coordinated_disclosure_date must be set on resolution"
         );
         // Disclosure date must be strictly after resolved_at
+        let disclosure_date = resolved
+            .coordinated_disclosure_date
+            .expect("coordinated_disclosure_date must be set");
+        let resolved_at = resolved
+            .resolved_at
+            .expect("resolved_at must be set");
         assert!(
-            resolved.coordinated_disclosure_date.unwrap() > resolved.resolved_at.unwrap(),
+            disclosure_date > resolved_at,
             "coordinated_disclosure_date must be after resolved_at"
         );
 
@@ -576,7 +582,10 @@ mod test_14_2_duplicate_detection {
 
         // Original report A is unaffected
         let reports = store.reports.lock().await.clone();
-        let a_in_store = reports.iter().find(|r| r.id == report_a.id).unwrap();
+        let a_in_store = reports
+            .iter()
+            .find(|r| r.id == report_a.id)
+            .expect("report A must exist in store");
         assert_eq!(
             a_in_store.status,
             ReportStatus::New,
@@ -726,7 +735,7 @@ mod test_14_4_transition_workflow {
                 "unmet_criteria must be non-empty when transition fails"
             );
         } else {
-            panic!("expected TransitionCriteriaNotMet error");
+            assert!(false, "expected TransitionCriteriaNotMet error, got a different result");
         }
 
         // ── Step 2: Satisfy all criteria ─────────────────────────────────────
@@ -749,16 +758,16 @@ mod test_14_4_transition_workflow {
         // Move both reports to Resolved (satisfies remediation_rate = 100%)
         update_report_status(&store, &dispatcher, report_alice.id, ReportStatus::Triaged)
             .await
-            .unwrap();
+            .expect("triaging alice's report should succeed");
         update_report_status(&store, &dispatcher, report_alice.id, ReportStatus::Resolved)
             .await
-            .unwrap();
+            .expect("resolving alice's report should succeed");
         update_report_status(&store, &dispatcher, report_bob.id, ReportStatus::Triaged)
             .await
-            .unwrap();
+            .expect("triaging bob's report should succeed");
         update_report_status(&store, &dispatcher, report_bob.id, ReportStatus::Resolved)
             .await
-            .unwrap();
+            .expect("resolving bob's report should succeed");
 
         // ── Step 3: Attempt transition → must succeed ────────────────────────
         let result = attempt_transition(&store, &config, admin_id).await;
@@ -766,7 +775,7 @@ mod test_14_4_transition_workflow {
             result.is_ok(),
             "transition must succeed when all criteria are met"
         );
-        let transition_result = result.unwrap();
+        let transition_result = result.expect("transition result must be Ok");
         assert!(transition_result.success);
         assert!(transition_result.unmet_criteria.is_empty());
 
@@ -954,13 +963,16 @@ mod db_integration {
     };
 
     async fn make_service() -> BugBountyService {
+        // INVARIANT: DATABASE_URL must be set; test cannot proceed without a DB connection.
         let url =
             std::env::var("DATABASE_URL").expect("DATABASE_URL required for integration tests");
+        // INVARIANT: DB must be reachable; unrecoverable if the connection fails at test startup.
         let pool = sqlx::PgPool::connect(&url).await.expect("db connect");
         let repo = Arc::new(BugBountyRepository::new(pool));
         let dispatcher = Arc::new(NotificationDispatcher::new(Arc::clone(&repo)));
         let config = BugBountyConfig::default();
         let registry = Registry::new();
+        // INVARIANT: Metrics registration must succeed at startup; failure indicates a programming error.
         let metrics = Arc::new(BugBountyMetrics::new(&registry).expect("metrics"));
         BugBountyService::new(repo, dispatcher, config, metrics)
     }

@@ -15,12 +15,14 @@ async fn setup_test_db() -> PgPool {
 
 async fn seed_fee_structures(pool: &PgPool) {
     // Clear existing test data
+    // Test setup: failure indicates test environment issue
     sqlx::query("DELETE FROM fee_structures WHERE transaction_type LIKE 'test_%'")
         .execute(pool)
         .await
-        .unwrap();
+        .expect("Failed to clear existing test fee structures");
 
     // Tier 1: Small amounts (₦1,000 - ₦50,000)
+    // Test setup: failure indicates test environment issue
     sqlx::query(
         r#"
         INSERT INTO fee_structures 
@@ -31,9 +33,10 @@ async fn seed_fee_structures(pool: &PgPool) {
     )
     .execute(pool)
     .await
-    .unwrap();
+    .expect("Failed to insert tier 1 test fee structure");
 
     // Tier 2: Medium amounts (₦50,001 - ₦500,000)
+    // Test setup: failure indicates test environment issue
     sqlx::query(
         r#"
         INSERT INTO fee_structures 
@@ -44,9 +47,10 @@ async fn seed_fee_structures(pool: &PgPool) {
     )
     .execute(pool)
     .await
-    .unwrap();
+    .expect("Failed to insert tier 2 test fee structure");
 
     // Tier 3: Large amounts (₦500,001+)
+    // Test setup: failure indicates test environment issue
     sqlx::query(
         r#"
         INSERT INTO fee_structures 
@@ -57,9 +61,10 @@ async fn seed_fee_structures(pool: &PgPool) {
     )
     .execute(pool)
     .await
-    .unwrap();
+    .expect("Failed to insert tier 3 test fee structure");
 
     // Paystack fees
+    // Test setup: failure indicates test environment issue
     sqlx::query(
         r#"
         INSERT INTO fee_structures 
@@ -70,9 +75,10 @@ async fn seed_fee_structures(pool: &PgPool) {
     )
     .execute(pool)
     .await
-    .unwrap();
+    .expect("Failed to insert paystack test fee structure");
 
     // Offramp fees
+    // Test setup: failure indicates test environment issue
     sqlx::query(
         r#"
         INSERT INTO fee_structures 
@@ -83,7 +89,7 @@ async fn seed_fee_structures(pool: &PgPool) {
     )
     .execute(pool)
     .await
-    .unwrap();
+    .expect("Failed to insert offramp test fee structure");
 }
 
 #[tokio::test]
@@ -92,7 +98,8 @@ async fn test_tier1_small_amount_fees() {
     seed_fee_structures(&pool).await;
 
     let service = FeeCalculationService::new(pool);
-    let amount = BigDecimal::from_str("10000").unwrap();
+    // Test fixture: valid decimal string
+    let amount = BigDecimal::from_str("10000").expect("Failed to parse test amount");
 
     let breakdown = service
         .calculate_fees("onramp", amount.clone(), Some("flutterwave"), Some("card"))
@@ -105,17 +112,12 @@ async fn test_tier1_small_amount_fees() {
     assert_eq!(breakdown.amount, amount);
     assert!(breakdown.provider.is_some());
 
-    let provider_fee = breakdown.provider.unwrap();
-    assert_eq!(
-        provider_fee.calculated,
-        BigDecimal::from_str("240").unwrap()
-    );
-    assert_eq!(
-        breakdown.platform.calculated,
-        BigDecimal::from_str("50").unwrap()
-    );
-    assert_eq!(breakdown.total, BigDecimal::from_str("290").unwrap());
-    assert_eq!(breakdown.net_amount, BigDecimal::from_str("9710").unwrap());
+    // Test assertion: provider fee should be present
+    let provider_fee = breakdown.provider.expect("Provider fee should be present");
+    assert_eq!(provider_fee.calculated, BigDecimal::from_str("240").expect("Failed to parse expected value"));
+    assert_eq!(breakdown.platform.calculated, BigDecimal::from_str("50").expect("Failed to parse expected value"));
+    assert_eq!(breakdown.total, BigDecimal::from_str("290").expect("Failed to parse expected value"));
+    assert_eq!(breakdown.net_amount, BigDecimal::from_str("9710").expect("Failed to parse expected value"));
 }
 
 #[tokio::test]
@@ -124,7 +126,8 @@ async fn test_tier2_medium_amount_fees() {
     seed_fee_structures(&pool).await;
 
     let service = FeeCalculationService::new(pool);
-    let amount = BigDecimal::from_str("100000").unwrap();
+    // Test fixture: valid decimal string
+    let amount = BigDecimal::from_str("100000").expect("Failed to parse test amount");
 
     let breakdown = service
         .calculate_fees("onramp", amount.clone(), Some("flutterwave"), Some("card"))
@@ -134,16 +137,11 @@ async fn test_tier2_medium_amount_fees() {
     // Provider fee: 100,000 × 1.4% = 1,400 (no flat fee in tier 2)
     // Platform fee: 100,000 × 0.3% = 300
     // Total: 1,700
-    let provider_fee = breakdown.provider.unwrap();
-    assert_eq!(
-        provider_fee.calculated,
-        BigDecimal::from_str("1400").unwrap()
-    );
-    assert_eq!(
-        breakdown.platform.calculated,
-        BigDecimal::from_str("300").unwrap()
-    );
-    assert_eq!(breakdown.total, BigDecimal::from_str("1700").unwrap());
+    // Test assertion: provider fee should be present
+    let provider_fee = breakdown.provider.expect("Provider fee should be present");
+    assert_eq!(provider_fee.calculated, BigDecimal::from_str("1400").expect("Failed to parse expected value"));
+    assert_eq!(breakdown.platform.calculated, BigDecimal::from_str("300").expect("Failed to parse expected value"));
+    assert_eq!(breakdown.total, BigDecimal::from_str("1700").expect("Failed to parse expected value"));
 }
 
 #[tokio::test]
@@ -152,7 +150,8 @@ async fn test_tier3_large_amount_with_cap() {
     seed_fee_structures(&pool).await;
 
     let service = FeeCalculationService::new(pool);
-    let amount = BigDecimal::from_str("1000000").unwrap();
+    // Test fixture: valid decimal string
+    let amount = BigDecimal::from_str("1000000").expect("Failed to parse test amount");
 
     let breakdown = service
         .calculate_fees("onramp", amount.clone(), Some("flutterwave"), Some("card"))
@@ -162,23 +161,16 @@ async fn test_tier3_large_amount_with_cap() {
     // Provider fee: 1,000,000 × 1.4% = 14,000 BUT capped at 2,000
     // Platform fee: 1,000,000 × 0.2% = 2,000
     // Total: 4,000
-    let provider_fee = breakdown.provider.unwrap();
-    assert_eq!(
-        provider_fee.calculated,
-        BigDecimal::from_str("2000").unwrap()
-    );
-    assert_eq!(
-        breakdown.platform.calculated,
-        BigDecimal::from_str("2000").unwrap()
-    );
-    assert_eq!(breakdown.total, BigDecimal::from_str("4000").unwrap());
+    // Test assertion: provider fee should be present
+    let provider_fee = breakdown.provider.expect("Provider fee should be present");
+    assert_eq!(provider_fee.calculated, BigDecimal::from_str("2000").expect("Failed to parse expected value"));
+    assert_eq!(breakdown.platform.calculated, BigDecimal::from_str("2000").expect("Failed to parse expected value"));
+    assert_eq!(breakdown.total, BigDecimal::from_str("4000").expect("Failed to parse expected value"));
 
     // Effective rate should be 0.4%
-    let expected_rate = BigDecimal::from_str("0.4").unwrap();
-    assert!(
-        breakdown.effective_rate >= expected_rate
-            && breakdown.effective_rate <= BigDecimal::from_str("0.41").unwrap()
-    );
+    // Test fixture: valid decimal string
+    let expected_rate = BigDecimal::from_str("0.4").expect("Failed to parse expected value");
+    assert!(breakdown.effective_rate >= expected_rate && breakdown.effective_rate <= BigDecimal::from_str("0.41").expect("Failed to parse expected value"));
 }
 
 #[tokio::test]
@@ -192,7 +184,8 @@ async fn test_boundary_amount_tier_selection() {
     let breakdown1 = service
         .calculate_fees(
             "onramp",
-            BigDecimal::from_str("50000").unwrap(),
+            // Test fixture: valid decimal string
+            BigDecimal::from_str("50000").expect("Failed to parse test amount"),
             Some("flutterwave"),
             Some("card"),
         )
@@ -200,14 +193,16 @@ async fn test_boundary_amount_tier_selection() {
         .expect("Failed to calculate fees");
 
     // Should have flat fee (tier 1)
-    let provider_fee1 = breakdown1.provider.unwrap();
-    assert_eq!(provider_fee1.flat, BigDecimal::from_str("100").unwrap());
+    // Test assertion: provider fee should be present
+    let provider_fee1 = breakdown1.provider.expect("Provider fee should be present");
+    assert_eq!(provider_fee1.flat, BigDecimal::from_str("100").expect("Failed to parse expected value"));
 
     // Test at tier boundary: 50,001 (should use tier 2)
     let breakdown2 = service
         .calculate_fees(
             "onramp",
-            BigDecimal::from_str("50001").unwrap(),
+            // Test fixture: valid decimal string
+            BigDecimal::from_str("50001").expect("Failed to parse test amount"),
             Some("flutterwave"),
             Some("card"),
         )
@@ -215,8 +210,9 @@ async fn test_boundary_amount_tier_selection() {
         .expect("Failed to calculate fees");
 
     // Should have no flat fee (tier 2)
-    let provider_fee2 = breakdown2.provider.unwrap();
-    assert_eq!(provider_fee2.flat, BigDecimal::from_str("0").unwrap());
+    // Test assertion: provider fee should be present
+    let provider_fee2 = breakdown2.provider.expect("Provider fee should be present");
+    assert_eq!(provider_fee2.flat, BigDecimal::from_str("0").expect("Failed to parse expected value"));
 }
 
 #[tokio::test]
@@ -225,7 +221,8 @@ async fn test_paystack_vs_flutterwave_fees() {
     seed_fee_structures(&pool).await;
 
     let service = FeeCalculationService::new(pool);
-    let amount = BigDecimal::from_str("10000").unwrap();
+    // Test fixture: valid decimal string
+    let amount = BigDecimal::from_str("10000").expect("Failed to parse test amount");
 
     let flutterwave = service
         .calculate_fees("onramp", amount.clone(), Some("flutterwave"), Some("card"))
@@ -239,14 +236,10 @@ async fn test_paystack_vs_flutterwave_fees() {
 
     // Flutterwave: 1.4% + 100 = 240
     // Paystack: 1.5% = 150
-    assert_eq!(
-        flutterwave.provider.as_ref().unwrap().calculated,
-        BigDecimal::from_str("240").unwrap()
-    );
-    assert_eq!(
-        paystack.provider.as_ref().unwrap().calculated,
-        BigDecimal::from_str("150").unwrap()
-    );
+    // Test assertion: provider fee should be present
+    assert_eq!(flutterwave.provider.as_ref().expect("Provider fee should be present").calculated, BigDecimal::from_str("240").expect("Failed to parse expected value"));
+    // Test assertion: provider fee should be present
+    assert_eq!(paystack.provider.as_ref().expect("Provider fee should be present").calculated, BigDecimal::from_str("150").expect("Failed to parse expected value"));
 }
 
 #[tokio::test]
@@ -255,7 +248,8 @@ async fn test_offramp_fees() {
     seed_fee_structures(&pool).await;
 
     let service = FeeCalculationService::new(pool);
-    let amount = BigDecimal::from_str("100000").unwrap();
+    // Test fixture: valid decimal string
+    let amount = BigDecimal::from_str("100000").expect("Failed to parse test amount");
 
     let breakdown = service
         .calculate_fees(
@@ -270,16 +264,11 @@ async fn test_offramp_fees() {
     // Provider fee: 100,000 × 0.8% = 800 (min 50, max 5000)
     // Platform fee: 100,000 × 0.5% = 500
     // Total: 1,300
-    let provider_fee = breakdown.provider.unwrap();
-    assert_eq!(
-        provider_fee.calculated,
-        BigDecimal::from_str("800").unwrap()
-    );
-    assert_eq!(
-        breakdown.platform.calculated,
-        BigDecimal::from_str("500").unwrap()
-    );
-    assert_eq!(breakdown.total, BigDecimal::from_str("1300").unwrap());
+    // Test assertion: provider fee should be present
+    let provider_fee = breakdown.provider.expect("Provider fee should be present");
+    assert_eq!(provider_fee.calculated, BigDecimal::from_str("800").expect("Failed to parse expected value"));
+    assert_eq!(breakdown.platform.calculated, BigDecimal::from_str("500").expect("Failed to parse expected value"));
+    assert_eq!(breakdown.total, BigDecimal::from_str("1300").expect("Failed to parse expected value"));
 }
 
 #[tokio::test]
@@ -288,15 +277,16 @@ async fn test_fee_estimation() {
     seed_fee_structures(&pool).await;
 
     let service = FeeCalculationService::new(pool);
-    let amount = BigDecimal::from_str("10000").unwrap();
+    // Test fixture: valid decimal string
+    let amount = BigDecimal::from_str("10000").expect("Failed to parse test amount");
 
     let (min_fee, max_fee) = service
         .estimate_fees("onramp", amount)
         .await
-        .expect("Failed to calculate fees");
+        .expect("Failed to estimate fees");
 
     // Should return range based on different providers
-    assert!(min_fee > BigDecimal::from_str("0").unwrap());
+    assert!(min_fee > BigDecimal::from_str("0").expect("Failed to parse expected value"));
     assert!(max_fee >= min_fee);
 }
 
@@ -306,7 +296,8 @@ async fn test_stellar_fee_absorbed() {
     seed_fee_structures(&pool).await;
 
     let service = FeeCalculationService::new(pool);
-    let amount = BigDecimal::from_str("10000").unwrap();
+    // Test fixture: valid decimal string
+    let amount = BigDecimal::from_str("10000").expect("Failed to parse test amount");
 
     let breakdown = service
         .calculate_fees("onramp", amount, Some("flutterwave"), Some("card"))
@@ -314,12 +305,9 @@ async fn test_stellar_fee_absorbed() {
         .expect("Failed to calculate fees");
 
     // Stellar fee should be absorbed (NGN = 0)
-    assert_eq!(breakdown.stellar.ngn, BigDecimal::from_str("0").unwrap());
+    assert_eq!(breakdown.stellar.ngn, BigDecimal::from_str("0").expect("Failed to parse expected value"));
     assert!(breakdown.stellar.absorbed);
-    assert_eq!(
-        breakdown.stellar.xlm,
-        BigDecimal::from_str("0.00001").unwrap()
-    );
+    assert_eq!(breakdown.stellar.xlm, BigDecimal::from_str("0.00001").expect("Failed to parse expected value"));
 }
 
 #[tokio::test]
@@ -328,7 +316,8 @@ async fn test_cache_invalidation() {
     seed_fee_structures(&pool).await;
 
     let service = FeeCalculationService::new(pool);
-    let amount = BigDecimal::from_str("10000").unwrap();
+    // Test fixture: valid decimal string
+    let amount = BigDecimal::from_str("10000").expect("Failed to parse test amount");
 
     // First call - loads from DB
     let _ = service
@@ -345,7 +334,7 @@ async fn test_cache_invalidation() {
         .await
         .expect("Failed to calculate fees");
 
-    assert!(breakdown.total > BigDecimal::from_str("0").unwrap());
+    assert!(breakdown.total > BigDecimal::from_str("0").expect("Failed to parse expected value"));
 }
 
 #[tokio::test]
@@ -359,27 +348,29 @@ async fn test_effective_rate_calculation() {
     let breakdown1 = service
         .calculate_fees(
             "onramp",
-            BigDecimal::from_str("10000").unwrap(),
+            // Test fixture: valid decimal string
+            BigDecimal::from_str("10000").expect("Failed to parse test amount"),
             Some("flutterwave"),
             Some("card"),
         )
         .await
         .expect("Failed to calculate fees");
 
-    assert!(breakdown1.effective_rate >= BigDecimal::from_str("2.8").unwrap());
-    assert!(breakdown1.effective_rate <= BigDecimal::from_str("3.0").unwrap());
+    assert!(breakdown1.effective_rate >= BigDecimal::from_str("2.8").expect("Failed to parse expected value"));
+    assert!(breakdown1.effective_rate <= BigDecimal::from_str("3.0").expect("Failed to parse expected value"));
 
     // Test tier 3: ~0.4% effective rate
     let breakdown3 = service
         .calculate_fees(
             "onramp",
-            BigDecimal::from_str("1000000").unwrap(),
+            // Test fixture: valid decimal string
+            BigDecimal::from_str("1000000").expect("Failed to parse test amount"),
             Some("flutterwave"),
             Some("card"),
         )
         .await
         .expect("Failed to calculate fees");
 
-    assert!(breakdown3.effective_rate >= BigDecimal::from_str("0.3").unwrap());
-    assert!(breakdown3.effective_rate <= BigDecimal::from_str("0.5").unwrap());
+    assert!(breakdown3.effective_rate >= BigDecimal::from_str("0.3").expect("Failed to parse expected value"));
+    assert!(breakdown3.effective_rate <= BigDecimal::from_str("0.5").expect("Failed to parse expected value"));
 }

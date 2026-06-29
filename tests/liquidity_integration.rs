@@ -14,6 +14,7 @@
 ///   - Pool resume restores routing
 #[cfg(all(test, feature = "integration"))]
 mod tests {
+    use anyhow::{bail, Context, Result};
     use sqlx::postgres::PgPoolOptions;
     use sqlx::types::BigDecimal;
     use std::str::FromStr;
@@ -24,20 +25,20 @@ mod tests {
         RESERVATION_TIMEOUT_SECS,
     };
 
-    async fn setup() -> (Arc<LiquidityRepository>, sqlx::PgPool) {
-        let url =
-            std::env::var("DATABASE_URL").expect("DATABASE_URL required for integration tests");
+    async fn setup() -> Result<(Arc<LiquidityRepository>, sqlx::PgPool)> {
+        let url = std::env::var("DATABASE_URL")
+            .context("DATABASE_URL required for integration tests")?;
         let pg = PgPoolOptions::new()
             .max_connections(5)
             .connect(&url)
             .await
-            .unwrap();
+            .context("failed to connect to database")?;
         let repo = Arc::new(LiquidityRepository::new(pg.clone()));
-        (repo, pg)
+        Ok((repo, pg))
     }
 
-    fn bd(s: &str) -> BigDecimal {
-        BigDecimal::from_str(s).unwrap()
+    fn bd(s: &str) -> Result<BigDecimal> {
+        BigDecimal::from_str(s).context("invalid bigdecimal string")
     }
 
     /// Seed a fresh pool for a test and return its pool_id.
@@ -46,7 +47,7 @@ mod tests {
         pair: &str,
         pt: PoolType,
         available: &str,
-    ) -> Uuid {
+    ) -> Result<Uuid> {
         // Insert directly so we can control available_liquidity
         let pool_id: Uuid = sqlx::query_scalar!(
             r#"INSERT INTO liquidity_pools
@@ -56,82 +57,96 @@ mod tests {
                RETURNING pool_id"#,
             pair,
             pt as PoolType,
-            bd(available),
-            bd("100"),      // min threshold
-            bd("500"),      // target
-            bd("99999999"), // cap
+            bd(available)?,
+            bd("100")?,      // min threshold
+            bd("500")?,      // target
+            bd("99999999")?, // cap
         )
         .fetch_one(&repo.pool)
         .await
-        .unwrap();
-        pool_id
+        .context("failed to seed pool")?;
+        Ok(pool_id)
     }
 
     // ── Lifecycle: reserve → release ──────────────────────────────────────────
 
     #[tokio::test]
-    async fn test_reserve_and_release() {
-        let (repo, _pg) = setup().await;
+    async fn test_reserve_and_release() -> Result<()> {
+        let (repo, _pg) = setup().await?;
         let pair = format!("TEST/{}", Uuid::new_v4().to_string()[..8].to_uppercase());
-        let pool_id = seed_pool(&repo, &pair, PoolType::Retail, "10000").await;
+        let pool_id = seed_pool(&repo, &pair, PoolType::Retail, "10000").await?;
 
         let txn_id = Uuid::new_v4();
-        let amount = bd("500");
+        let amount = bd("500")?;
 
         let reservation = repo
             .reserve_liquidity(pool_id, txn_id, &amount, 300)
             .await
-            .unwrap()
-            .expect("should reserve");
+            .context("reserve_liquidity db error")?
+            .context("should reserve")?;
 
         // Pool available should have decreased
-        let pool = repo.get_pool(pool_id).await.unwrap().unwrap();
-        assert_eq!(pool.available_liquidity, bd("9500"));
-        assert_eq!(pool.reserved_liquidity, bd("500"));
+        let pool = repo
+            .get_pool(pool_id)
+            .await
+            .context("get_pool db error")?
+            .context("pool not found")?;
+        assert_eq!(pool.available_liquidity, bd("9500")?);
+        assert_eq!(pool.reserved_liquidity, bd("500")?);
 
         // Release
         let released = repo
             .release_reservation(reservation.reservation_id, ReservationStatus::Released)
             .await
-            .unwrap();
+            .context("release_reservation db error")?;
         assert!(released);
 
-        let pool = repo.get_pool(pool_id).await.unwrap().unwrap();
-        assert_eq!(pool.available_liquidity, bd("10000"));
-        assert_eq!(pool.reserved_liquidity, bd("0"));
+        let pool = repo
+            .get_pool(pool_id)
+            .await
+            .context("get_pool db error")?
+            .context("pool not found")?;
+        assert_eq!(pool.available_liquidity, bd("10000")?);
+        assert_eq!(pool.reserved_liquidity, bd("0")?);
+        Ok(())
     }
 
     // ── Lifecycle: reserve → consume ──────────────────────────────────────────
 
     #[tokio::test]
-    async fn test_reserve_and_consume() {
-        let (repo, _pg) = setup().await;
+    async fn test_reserve_and_consume() -> Result<()> {
+        let (repo, _pg) = setup().await?;
         let pair = format!("TEST/{}", Uuid::new_v4().to_string()[..8].to_uppercase());
-        let pool_id = seed_pool(&repo, &pair, PoolType::Retail, "10000").await;
+        let pool_id = seed_pool(&repo, &pair, PoolType::Retail, "10000").await?;
 
         let reservation = repo
-            .reserve_liquidity(pool_id, Uuid::new_v4(), &bd("1000"), 300)
+            .reserve_liquidity(pool_id, Uuid::new_v4(), &bd("1000")?, 300)
             .await
-            .unwrap()
-            .expect("should reserve");
+            .context("reserve_liquidity db error")?
+            .context("should reserve")?;
 
         repo.release_reservation(reservation.reservation_id, ReservationStatus::Consumed)
             .await
-            .unwrap();
+            .context("release_reservation db error")?;
 
-        let pool = repo.get_pool(pool_id).await.unwrap().unwrap();
+        let pool = repo
+            .get_pool(pool_id)
+            .await
+            .context("get_pool db error")?
+            .context("pool not found")?;
         // Consumed: total depth decreases, reserved returns to 0
-        assert_eq!(pool.total_liquidity_depth, bd("9000"));
-        assert_eq!(pool.reserved_liquidity, bd("0"));
+        assert_eq!(pool.total_liquidity_depth, bd("9000")?);
+        assert_eq!(pool.reserved_liquidity, bd("0")?);
+        Ok(())
     }
 
     // ── Race condition: concurrent reservations must not double-spend ─────────
 
     #[tokio::test]
-    async fn test_concurrent_reservation_no_double_spend() {
-        let (repo, _pg) = setup().await;
+    async fn test_concurrent_reservation_no_double_spend() -> Result<()> {
+        let (repo, _pg) = setup().await?;
         let pair = format!("TEST/{}", Uuid::new_v4().to_string()[..8].to_uppercase());
-        let pool_id = seed_pool(&repo, &pair, PoolType::Retail, "1000").await;
+        let pool_id = seed_pool(&repo, &pair, PoolType::Retail, "1000").await?;
 
         // Spawn 10 concurrent reservations of 200 each; only 5 should succeed
         let repo = Arc::clone(&repo);
@@ -139,7 +154,7 @@ mod tests {
             .map(|_| {
                 let r = Arc::clone(&repo);
                 tokio::spawn(async move {
-                    r.reserve_liquidity(pool_id, Uuid::new_v4(), &bd("200"), 300)
+                    r.reserve_liquidity(pool_id, Uuid::new_v4(), &bd("200")?, 300)
                         .await
                 })
             })
@@ -147,7 +162,12 @@ mod tests {
 
         let mut successes = 0usize;
         for h in handles {
-            if h.await.unwrap().unwrap().is_some() {
+            if h
+                .await
+                .context("join error")?
+                .context("concurrent reservation failed")?
+                .is_some()
+            {
                 successes += 1;
             }
         }
@@ -157,43 +177,56 @@ mod tests {
             "exactly 5 of 10 concurrent reservations should succeed"
         );
 
-        let pool = repo.get_pool(pool_id).await.unwrap().unwrap();
-        assert_eq!(pool.available_liquidity, bd("0"));
-        assert_eq!(pool.reserved_liquidity, bd("1000"));
+        let pool = repo
+            .get_pool(pool_id)
+            .await
+            .context("get_pool db error")?
+            .context("pool not found")?;
+        assert_eq!(pool.available_liquidity, bd("0")?);
+        assert_eq!(pool.reserved_liquidity, bd("1000")?);
+        Ok(())
     }
 
     // ── Reservation timeout ───────────────────────────────────────────────────
 
     #[tokio::test]
-    async fn test_reservation_timeout_releases_liquidity() {
-        let (repo, _pg) = setup().await;
+    async fn test_reservation_timeout_releases_liquidity() -> Result<()> {
+        let (repo, _pg) = setup().await?;
         let pair = format!("TEST/{}", Uuid::new_v4().to_string()[..8].to_uppercase());
-        let pool_id = seed_pool(&repo, &pair, PoolType::Retail, "5000").await;
+        let pool_id = seed_pool(&repo, &pair, PoolType::Retail, "5000").await?;
 
         // Reserve with 0-second timeout so it expires immediately
         let reservation = repo
-            .reserve_liquidity(pool_id, Uuid::new_v4(), &bd("1000"), 0)
+            .reserve_liquidity(pool_id, Uuid::new_v4(), &bd("1000")?, 0)
             .await
-            .unwrap()
-            .expect("should reserve");
+            .context("reserve_liquidity db error")?
+            .context("should reserve")?;
 
         // Expire stale reservations
-        let expired = repo.expire_stale_reservations().await.unwrap();
+        let expired = repo
+            .expire_stale_reservations()
+            .await
+            .context("expire_stale_reservations db error")?;
         assert!(expired.contains(&reservation.reservation_id));
 
-        let pool = repo.get_pool(pool_id).await.unwrap().unwrap();
+        let pool = repo
+            .get_pool(pool_id)
+            .await
+            .context("get_pool db error")?
+            .context("pool not found")?;
         assert_eq!(
             pool.available_liquidity,
-            bd("5000"),
+            bd("5000")?,
             "liquidity should be restored after timeout"
         );
+        Ok(())
     }
 
     // ── Minimum threshold enforcement ─────────────────────────────────────────
 
     #[tokio::test]
-    async fn test_minimum_threshold_blocks_reservation() {
-        let (repo, _pg) = setup().await;
+    async fn test_minimum_threshold_blocks_reservation() -> Result<()> {
+        let (repo, _pg) = setup().await?;
         let pair = format!("TEST/{}", Uuid::new_v4().to_string()[..8].to_uppercase());
 
         // Pool with available = 50, min_threshold = 100 → below threshold
@@ -207,74 +240,75 @@ mod tests {
         )
         .fetch_one(&repo.pool)
         .await
-        .unwrap();
+        .context("insert pool db error")?;
 
         // The service checks min threshold before calling repo; simulate via service
-        let pool = repo.get_pool(pool_id).await.unwrap().unwrap();
+        let pool = repo
+            .get_pool(pool_id)
+            .await
+            .context("get_pool db error")?
+            .context("pool not found")?;
         assert!(
             pool.available_liquidity < pool.min_liquidity_threshold,
             "pool should be below minimum threshold"
         );
 
-        // Direct repo call should also fail because available < amount
-        let result = repo
-            .reserve_liquidity(pool_id, Uuid::new_v4(), &bd("10"), 300)
-            .await
-            .unwrap();
-        // available=50 >= amount=10 so DB would allow it, but service layer blocks it.
-        // Here we verify the service-level guard works:
-        let models::PoolStatus::Active = pool.pool_status else {
-            panic!("pool should be active")
-        };
+        if pool.pool_status != PoolStatus::Active {
+            bail!(
+                "pool should be active, got {:?}",
+                pool.pool_status
+            );
+        }
         assert!(
             pool.available_liquidity < pool.min_liquidity_threshold,
             "service must reject when available < min_threshold"
         );
+        Ok(())
     }
 
     // ── Pool pause prevents new reservations ──────────────────────────────────
 
     #[tokio::test]
-    async fn test_pause_prevents_new_reservations() {
-        let (repo, _pg) = setup().await;
+    async fn test_pause_prevents_new_reservations() -> Result<()> {
+        let (repo, _pg) = setup().await?;
         let pair = format!("TEST/{}", Uuid::new_v4().to_string()[..8].to_uppercase());
-        let pool_id = seed_pool(&repo, &pair, PoolType::Retail, "10000").await;
+        let pool_id = seed_pool(&repo, &pair, PoolType::Retail, "10000").await?;
 
-        // Pause the pool
         repo.set_pool_status(pool_id, PoolStatus::Paused)
             .await
-            .unwrap();
+            .context("set_pool_status db error")?;
 
-        // Attempt reservation — should return None because pool_status != 'active'
         let result = repo
-            .reserve_liquidity(pool_id, Uuid::new_v4(), &bd("100"), 300)
+            .reserve_liquidity(pool_id, Uuid::new_v4(), &bd("100")?, 300)
             .await
-            .unwrap();
+            .context("reserve_liquidity db error")?;
         assert!(result.is_none(), "paused pool must reject new reservations");
+        Ok(())
     }
 
     // ── Pool resume restores routing ──────────────────────────────────────────
 
     #[tokio::test]
-    async fn test_resume_restores_reservations() {
-        let (repo, _pg) = setup().await;
+    async fn test_resume_restores_reservations() -> Result<()> {
+        let (repo, _pg) = setup().await?;
         let pair = format!("TEST/{}", Uuid::new_v4().to_string()[..8].to_uppercase());
-        let pool_id = seed_pool(&repo, &pair, PoolType::Retail, "10000").await;
+        let pool_id = seed_pool(&repo, &pair, PoolType::Retail, "10000").await?;
 
         repo.set_pool_status(pool_id, PoolStatus::Paused)
             .await
-            .unwrap();
+            .context("set_pool_status db error")?;
         repo.set_pool_status(pool_id, PoolStatus::Active)
             .await
-            .unwrap();
+            .context("set_pool_status db error")?;
 
         let result = repo
-            .reserve_liquidity(pool_id, Uuid::new_v4(), &bd("100"), 300)
+            .reserve_liquidity(pool_id, Uuid::new_v4(), &bd("100")?, 300)
             .await
-            .unwrap();
+            .context("reserve_liquidity db error")?;
         assert!(
             result.is_some(),
             "resumed pool must accept new reservations"
         );
+        Ok(())
     }
 }

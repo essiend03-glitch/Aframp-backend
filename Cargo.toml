@@ -279,8 +279,8 @@ path = "tests/signature_verification_test.rs"
 required-features = ["database"]
 
 [[test]]
-name = "stellar_throughput_tests"
-path = "tests/stellar_throughput_tests.rs"
+name = "api_rates_test"
+path = "tests/api_rates_test.rs"
 required-features = ["database"]
 
 # ---------------------------------------------------------------------------

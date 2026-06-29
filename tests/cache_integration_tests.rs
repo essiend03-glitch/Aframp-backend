@@ -51,7 +51,7 @@ async fn test_advanced_redis_cache_basic_operations() -> Result<(), anyhow::Erro
 
     let retrieved: Option<TestData> = cache.get(&key).await?;
     assert!(retrieved.is_some());
-    assert_eq!(retrieved.unwrap().id, test_data.id);
+    assert_eq!(retrieved.expect("just asserted Some").id, test_data.id);
 
     // Test exists
     assert!(cache.exists(&key).await?);
@@ -99,7 +99,7 @@ async fn test_cache_aside_pattern() -> Result<(), anyhow::Error> {
     // Verify data is cached
     let cached: Option<TestData> = cache.get(&key).await?;
     assert!(cached.is_some());
-    assert_eq!(cached.unwrap().id, expected_data.id);
+    assert_eq!(cached.expect("just asserted Some").id, expected_data.id);
 
     // Second call should hit cache (should be faster)
     let start = std::time::Instant::now();
@@ -318,7 +318,7 @@ async fn test_cdn_manager_configuration() -> Result<(), anyhow::Error> {
     let cache_control = headers.get("cache-control");
     assert!(cache_control.is_some());
 
-    let cache_control_str = cache_control.unwrap().to_str()?;
+    let cache_control_str = cache_control.expect("just asserted Some").to_str()?;
     assert!(cache_control_str.contains("max-age="));
     assert!(cache_control_str.contains("public"));
 
@@ -472,7 +472,7 @@ async fn test_concurrent_cache_operations() -> Result<(), anyhow::Error> {
             // Get value
             let retrieved: Option<TestData> = cache_clone.get(&key).await?;
             assert!(retrieved.is_some());
-            assert_eq!(retrieved.unwrap().value, i);
+            assert_eq!(retrieved.expect("just asserted Some").value, i);
 
             // Delete value
             cache_clone.delete(&key).await?;
@@ -630,8 +630,8 @@ mod issue_459 {
     // 1. SCAN-based delete_pattern accuracy
     #[tokio::test]
     #[ignore = "requires REDIS_URL"]
-    async fn test_scan_delete_pattern_accuracy() {
-        let Some((redis, _ml)) = build_cache().await else { return };
+    async fn test_scan_delete_pattern_accuracy() -> anyhow::Result<()> {
+        let Some((redis, _ml)) = build_cache().await else { return Ok(()) };
 
         // Insert 20 rate keys + 5 unrelated
         for i in 0..20 {
@@ -643,16 +643,18 @@ mod issue_459 {
             let _ = CacheTrait::<String>::set(&redis, &key, &"val".to_string(), Some(Duration::from_secs(60))).await;
         }
 
-        let deleted = CacheTrait::<String>::delete_pattern(&redis, "v1:rate:TEST:*").await.unwrap();
+        let deleted = CacheTrait::<String>::delete_pattern(&redis, "v1:rate:TEST:*").await?;
         assert_eq!(deleted, 20, "Expected exactly 20 rate keys deleted");
 
         // Unrelated keys must survive
         for i in 0..5 {
             let key = format!("v1:wallet:ADDR{}", i);
-            let exists = CacheTrait::<String>::exists(&redis, &key).await.unwrap();
+            let exists = CacheTrait::<String>::exists(&redis, &key).await?;
             assert!(exists, "Wallet key {} should not have been deleted", key);
             let _ = CacheTrait::<String>::delete(&redis, &key).await;
         }
+
+        Ok(())
     }
 
     // 2. Stampede protection: 5,000 concurrent requests → 1 DB call
@@ -682,7 +684,9 @@ mod issue_459 {
                         }
                     })
                     .await
-                    .unwrap()
+                    // Unwrap is acceptable here: a failure inside a spawned test task
+                    // indicates a bug that should fail the test
+                    .expect("stampede task should succeed")
             }));
         }
 
@@ -690,7 +694,7 @@ mod issue_459 {
         let db_calls = call_count.load(Ordering::SeqCst);
 
         assert_eq!(db_calls, 1, "Single-flight: expected 1 DB call, got {}", db_calls);
-        assert!(results.iter().all(|r| r.as_ref().unwrap() == "1750.0"));
+        assert!(results.iter().all(|r| r.as_ref().expect("result should be Some") == "1750.0"));
 
         ml.l2_invalidate::<String>(test_key).await;
     }
@@ -707,10 +711,12 @@ mod issue_459 {
         let _ = CacheTrait::<String>::set(&redis, &key_a, &"profile-A".to_string(), Some(Duration::from_secs(60))).await;
 
         // B should return None even though A is cached
-        let val_b: Option<String> = CacheTrait::<String>::get(&redis, &key_b).await.unwrap();
+        let val_b: Option<String> = CacheTrait::<String>::get(&redis, &key_b).await
+            .expect("Cache get should not panic on degraded connection");
         assert!(val_b.is_none(), "User B must not see User A's cache entry");
 
-        let val_a: Option<String> = CacheTrait::<String>::get(&redis, &key_a).await.unwrap();
+        let val_a: Option<String> = CacheTrait::<String>::get(&redis, &key_a).await
+            .expect("Cache get should not panic on degraded connection");
         assert_eq!(val_a.as_deref(), Some("profile-A"));
 
         let _ = CacheTrait::<String>::delete(&redis, &key_a).await;
@@ -728,7 +734,8 @@ mod issue_459 {
         // Pool build may fail — that's OK; simulate degraded mode
         if let Ok(pool) = init_cache_pool(cfg).await {
             let redis = RedisCache::new(pool);
-            let result: Option<String> = CacheTrait::<String>::get(&redis, "any-key").await.unwrap();
+            let result: Option<String> = CacheTrait::<String>::get(&redis, "any-key").await
+                .expect("Cache get should return Ok(None) on degraded connection, not panic");
             assert!(result.is_none(), "Degraded Redis must return None, not panic");
         }
         // If pool fails entirely, test still passes — connection error IS the graceful path
@@ -745,7 +752,8 @@ mod issue_459 {
         let _ = CacheTrait::<String>::set(&*r, &key, &"1750".to_string(), Some(Duration::from_secs(60))).await;
 
         // Confirm key exists before invalidation
-        assert!(CacheTrait::<String>::exists(&*r, &key).await.unwrap());
+        assert!(CacheTrait::<String>::exists(&*r, &key).await
+            .expect("Cache exists should not panic"));
 
         // Pipeline processes the event
         let pipeline = InvalidationPipeline::new(r.clone(), None);
@@ -755,7 +763,8 @@ mod issue_459 {
         }).await;
 
         // Key must be gone
-        let exists = CacheTrait::<String>::exists(&*r, &key).await.unwrap();
+        let exists = CacheTrait::<String>::exists(&*r, &key).await
+            .expect("Cache exists should not panic");
         assert!(!exists, "Rate key must be deleted after ExchangeRateUpdated event");
     }
 
