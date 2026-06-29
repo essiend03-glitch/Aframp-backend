@@ -278,6 +278,11 @@ name = "signature_verification_test"
 path = "tests/signature_verification_test.rs"
 required-features = ["database"]
 
+[[test]]
+name = "api_rates_test"
+path = "tests/api_rates_test.rs"
+required-features = ["database"]
+
 # ---------------------------------------------------------------------------
 # Examples
 # ---------------------------------------------------------------------------
