@@ -607,13 +607,15 @@ mod tests {
         TxRecord {
             wallet_address: "GTEST".to_string(),
             tx_type: tx_type.to_string(),
-            cngn_amount: BigDecimal::from_f64(cngn).unwrap(),
-            from_amount: BigDecimal::from_f64(cngn).unwrap(),
-            to_amount: BigDecimal::from_f64(cngn).unwrap(),
+            cngn_amount: BigDecimal::from_f64(cngn).expect("finite f64 for test fixture"),
+            from_amount: BigDecimal::from_f64(cngn).expect("finite f64 for test fixture"),
+            to_amount: BigDecimal::from_f64(cngn).expect("finite f64 for test fixture"),
             from_currency: "NGN".to_string(),
             to_currency: to_currency.to_string(),
             payment_provider: provider.map(|s| s.to_string()),
-            created_at: Utc.with_ymd_and_hms(2026, 1, 15, hour, 0, 0).unwrap(),
+            created_at: Utc.with_ymd_and_hms(2026, 1, 15, hour, 0, 0)
+                .single()
+                .expect("valid date/time for test fixture"),
             status: "completed".to_string(),
         }
     }
@@ -625,7 +627,7 @@ mod tests {
         let pool = PgPoolOptions::new()
             .max_connections(1)
             .connect_lazy("postgres://localhost/test")
-            .unwrap();
+            .expect("valid test database URL");
         AnalyticsService::new(pool, AnalyticsConfig::default())
     }
 
